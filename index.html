@@ -112,6 +112,12 @@
   </div>
 </div>
 
+<div class="card">
+  <div class="step-label">stap 03 — bestandsnaam</div>
+  <input type="text" id="outputname" placeholder="mijn-route" style="width:100%">
+  <div class="hint">Zonder .gpx extensie. Laat leeg voor standaardnaam.</div>
+</div>
+
 <div style="width:100%;max-width:640px;margin-bottom:1rem">
   <button class="primary" id="gen-btn" onclick="generate()" disabled>Genereer & download GPX</button>
   <div class="status" id="gen-status"></div>
@@ -176,8 +182,6 @@ function parseCoords() {
 }
 
 document.getElementById('coords').addEventListener('keydown', e => { if (e.key === 'Enter') parseCoords(); });
-
-// Auto-parse the prefilled coordinate on load
 window.addEventListener('load', () => parseCoords());
 
 function findNearest(coord, pts) {
@@ -247,7 +251,9 @@ async function generate() {
     const allPts = [...approachPts, ...reordered, ...returnPts];
 
     const gpx = buildGPX(allPts);
-    download(gpx, 'route_uitgebreid.gpx');
+    const rawName = document.getElementById('outputname').value.trim();
+    const filename = rawName ? rawName.replace(/\.gpx$/i, '') + '.gpx' : 'route_uitgebreid.gpx';
+    download(gpx, filename);
     setStatus('gen-status', 'Klaar. Bestand gedownload.', 'ok');
 
   } catch (e) {
