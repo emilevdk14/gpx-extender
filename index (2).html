@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPX Route Extender</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #222222;
+    --border: #2e2e2e;
+    --accent: #c8f55a;
+    --accent-dim: #8aaa2e;
+    --text: #f0f0f0;
+    --text-muted: #888;
+    --text-dim: #555;
+    --danger: #ff5a5a;
+    --success: #5aff8a;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 3rem 1.5rem;
+  }
+  .header { text-align: center; margin-bottom: 3rem; }
+  .header h1 { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1; margin-bottom: 0.5rem; }
+  .header h1 span { color: var(--accent); }
+  .header p { color: var(--text-muted); font-size: 1rem; font-family: 'DM Mono', monospace; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.75rem; margin-bottom: 1rem; width: 100%; max-width: 640px; }
+  .step-label { font-size: 0.7rem; font-family: 'DM Mono', monospace; color: var(--accent); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.75rem; }
+  .drop-zone { border: 1.5px dashed var(--border); border-radius: var(--radius); padding: 2.5rem; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; background: var(--surface2); }
+  .drop-zone:hover, .drop-zone.over { border-color: var(--accent); background: #1e2410; }
+  .drop-zone .icon { font-size: 2rem; margin-bottom: 0.75rem; display: block; }
+  .drop-zone p { color: var(--text-muted); font-size: 0.9rem; }
+  .drop-zone .loaded { font-family: 'DM Mono', monospace; color: var(--accent); font-size: 0.85rem; margin-top: 0.5rem; }
+  .input-row { display: flex; gap: 0.5rem; }
+  input[type="text"], input[type="password"] { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.85rem; padding: 0.65rem 0.9rem; outline: none; transition: border-color 0.2s; width: 100%; }
+  input[type="text"]:focus, input[type="password"]:focus { border-color: var(--accent); }
+  input[type="text"]::placeholder, input[type="password"]::placeholder { color: var(--text-dim); }
+  .hint { font-size: 0.78rem; color: var(--text-dim); font-family: 'DM Mono', monospace; margin-top: 0.6rem; line-height: 1.6; }
+  .hint a { color: var(--accent-dim); text-decoration: none; }
+  .hint a:hover { color: var(--accent); }
+  button { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 600; padding: 0.65rem 1.1rem; cursor: pointer; transition: border-color 0.2s, background 0.2s; white-space: nowrap; }
+  button:hover { border-color: var(--accent); background: #1e2410; color: var(--accent); }
+  button.primary { background: var(--accent); color: #0f0f0f; border-color: var(--accent); font-size: 1rem; padding: 0.85rem 2rem; width: 100%; }
+  button.primary:hover { background: #d8ff6a; border-color: #d8ff6a; color: #0f0f0f; }
+  button.primary:disabled { opacity: 0.3; cursor: not-allowed; }
+  .status { font-family: 'DM Mono', monospace; font-size: 0.8rem; margin-top: 0.5rem; min-height: 1.1rem; color: var(--text-muted); }
+  .status.ok { color: var(--success); }
+  .status.err { color: var(--danger); }
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-top: 1rem; }
+  .stat { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.9rem 1rem; }
+  .stat-label { font-size: 0.7rem; font-family: 'DM Mono', monospace; color: var(--text-dim); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  .stat-val { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+  .stat-unit { font-size: 0.7rem; color: var(--text-muted); font-family: 'DM Mono', monospace; }
+  .footer { margin-top: 3rem; font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--text-dim); text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>GPX <span>Route</span> Extender</h1>
+  <p>// voeg jouw startpunt toe aan elke GPX-ronde</p>
+</div>
+
+<div class="card">
+  <div class="step-label">stap 01 — api sleutel</div>
+  <input type="password" id="apikey" placeholder="OpenRouteService API sleutel">
+  <div class="hint">
+    Gratis sleutel via <a href="https://openrouteservice.org/dev/#/signup" target="_blank">openrouteservice.org</a> → registreer → Dashboard → kopieer je token → plak hier.<br>
+    Wordt enkel lokaal gebruikt, nooit opgeslagen.
+  </div>
+  <div class="status" id="api-status"></div>
+</div>
+
+<div class="card">
+  <div class="step-label">stap 02 — gpx bestand</div>
+  <div class="drop-zone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+    <span class="icon">&#9685;</span>
+    <p>Sleep je .gpx bestand hier of klik om te selecteren</p>
+    <div class="loaded" id="filename"></div>
+    <input type="file" id="fileInput" accept=".gpx" style="display:none">
+  </div>
+  <div class="status" id="gpx-status"></div>
+</div>
+
+<div class="card">
+  <div class="step-label">stap 03 — startpunt</div>
+  <div class="input-row">
+    <input type="text" id="coords" placeholder="51.05431, 3.71823  of plak een Google Maps link">
+    <button onclick="parseCoords()">Laden</button>
+  </div>
+  <div class="hint">Google Maps → rechtsklik op startpunt → klik de coördinaten bovenaan het menu → plak hier.</div>
+  <div class="status" id="coord-status"></div>
+</div>
+
+<div class="card" id="card-stats" style="display:none">
+  <div class="step-label">overzicht</div>
+  <div class="stats-grid">
+    <div class="stat">
+      <div class="stat-label">Originele route</div>
+      <div class="stat-val" id="s-orig">--</div>
+      <div class="stat-unit">km</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Aanrijweg (luchtlijn)</div>
+      <div class="stat-val" id="s-extra">--</div>
+      <div class="stat-unit">km</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Totaal (geschat)</div>
+      <div class="stat-val" id="s-total">--</div>
+      <div class="stat-unit">km</div>
+    </div>
+  </div>
+</div>
+
+<div style="width:100%;max-width:640px;margin-bottom:1rem">
+  <button class="primary" id="gen-btn" onclick="generate()" disabled>Genereer & download GPX</button>
+  <div class="status" id="gen-status"></div>
+</div>
+
+<div class="footer">GPX Route Extender — routing via OpenRouteService (cycling-regular)</div>
+
+<script>
+let gpxPoints = [], userCoord = null, nearestIdx = 0;
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('over'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.classList.remove('over');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(f) {
+  if (!f.name.toLowerCase().endsWith('.gpx')) { setStatus('gpx-status', 'Ongeldig bestandstype.', 'err'); return; }
+  document.getElementById('filename').textContent = f.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(e.target.result, 'application/xml');
+      const trkpts = doc.querySelectorAll('trkpt, rtept');
+      if (trkpts.length < 2) { setStatus('gpx-status', 'Te weinig punten.', 'err'); return; }
+      gpxPoints = Array.from(trkpts).map(p => ({
+        lat: parseFloat(p.getAttribute('lat')),
+        lon: parseFloat(p.getAttribute('lon')),
+        el: p.querySelector('ele') ? parseFloat(p.querySelector('ele').textContent) : null
+      }));
+      setStatus('gpx-status', gpxPoints.length + ' trackpunten geladen.', 'ok');
+      if (userCoord) { nearestIdx = findNearest(userCoord, gpxPoints); }
+      updateStats(); checkReady();
+    } catch (err) { setStatus('gpx-status', 'Kon bestand niet verwerken.', 'err'); }
+  };
+  reader.readAsText(f);
+}
+
+function parseCoords() {
+  const raw = document.getElementById('coords').value.trim();
+  let lat = null, lon = null;
+  const plain = /^(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)$/.exec(raw);
+  if (plain) { lat = parseFloat(plain[1]); lon = parseFloat(plain[2]); }
+  if (!lat) { const m = /@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
+  if (!lat) { const m = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
+  if (!lat) { const m = /ll=(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
+  if (lat && lon && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+    userCoord = { lat, lon };
+    setStatus('coord-status', 'Startpunt: ' + lat.toFixed(5) + ', ' + lon.toFixed(5), 'ok');
+    if (gpxPoints.length) { nearestIdx = findNearest(userCoord, gpxPoints); }
+    updateStats(); checkReady();
+  } else {
+    userCoord = null;
+    setStatus('coord-status', 'Geen coördinaten herkend.', 'err');
+  }
+}
+
+document.getElementById('coords').addEventListener('keydown', e => { if (e.key === 'Enter') parseCoords(); });
+
+function findNearest(coord, pts) {
+  let best = 0, bestD = Infinity;
+  pts.forEach((p, i) => { const d = haversine(coord, p); if (d < bestD) { bestD = d; best = i; } });
+  return best;
+}
+
+function haversine(a, b) {
+  const R = 6371000, dLat = (b.lat - a.lat) * Math.PI / 180, dLon = (b.lon - a.lon) * Math.PI / 180;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+function totalDist(pts) {
+  let d = 0;
+  for (let i = 1; i < pts.length; i++) d += haversine(pts[i - 1], pts[i]);
+  return d;
+}
+
+function updateStats() {
+  if (!gpxPoints.length) return;
+  document.getElementById('card-stats').style.display = 'block';
+  const dist = totalDist(gpxPoints);
+  const toNearest = userCoord ? haversine(userCoord, gpxPoints[nearestIdx]) : null;
+  const extra = toNearest ? toNearest * 2 : 0;
+  document.getElementById('s-orig').textContent = (dist / 1000).toFixed(1);
+  document.getElementById('s-extra').textContent = toNearest ? (extra / 1000).toFixed(1) : '--';
+  document.getElementById('s-total').textContent = toNearest ? ((dist + extra) / 1000).toFixed(1) : '--';
+}
+
+function checkReady() {
+  document.getElementById('gen-btn').disabled = !(gpxPoints.length && userCoord);
+}
+
+async function getRoute(apiKey, from, to) {
+  const res = await fetch('https://api.openrouteservice.org/v2/directions/cycling-regular/geojson', {
+    method: 'POST',
+    headers: { 'Authorization': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ coordinates: [[from.lon, from.lat], [to.lon, to.lat]] })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'API fout ' + res.status);
+  }
+  const data = await res.json();
+  return data.features[0].geometry.coordinates.map(c => ({ lon: c[0], lat: c[1], el: null }));
+}
+
+async function generate() {
+  const apiKey = document.getElementById('apikey').value.trim();
+  if (!apiKey) { setStatus('gen-status', 'Voer eerst je API sleutel in bij stap 01.', 'err'); return; }
+
+  const btn = document.getElementById('gen-btn');
+  btn.disabled = true;
+  btn.textContent = 'Bezig...';
+
+  try {
+    nearestIdx = findNearest(userCoord, gpxPoints);
+    const entryPt = gpxPoints[nearestIdx];
+    const exitPt = nearestIdx === 0 ? gpxPoints[gpxPoints.length - 1] : gpxPoints[nearestIdx - 1];
+
+    setStatus('gen-status', 'Aanrijweg berekenen via wegen...', '');
+    const approachPts = await getRoute(apiKey, userCoord, entryPt);
+
+    setStatus('gen-status', 'Terugweg berekenen via wegen...', '');
+    const returnPts = await getRoute(apiKey, exitPt, userCoord);
+
+    const reordered = [...gpxPoints.slice(nearestIdx), ...gpxPoints.slice(0, nearestIdx)];
+    const allPts = [...approachPts, ...reordered, ...returnPts];
+
+    const gpx = buildGPX(allPts);
+    download(gpx, 'route_uitgebreid.gpx');
+    setStatus('gen-status', 'Klaar. Bestand gedownload.', 'ok');
+
+  } catch (e) {
+    setStatus('gen-status', 'Fout: ' + e.message, 'err');
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Genereer & download GPX';
+}
+
+function buildGPX(pts) {
+  const hdr = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX Route Extender" xmlns="http://www.topografix.com/GPX/1/1">\n<trk><n>Uitgebreide route</n><trkseg>\n`;
+  const ftr = `</trkseg></trk></gpx>`;
+  const body = pts.map(p => {
+    const el = p.el != null ? `<ele>${p.el}</ele>` : '';
+    return `<trkpt lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}">${el}</trkpt>`;
+  }).join('\n');
+  return hdr + body + '\n' + ftr;
+}
+
+function download(content, filename) {
+  const blob = new Blob([content], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function setStatus(id, msg, type) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'status' + (type ? ' ' + type : '');
+}
+</script>
+</body>
+</html>
