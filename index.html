@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -7,6 +6,7 @@
 <title>GPX Route Extender</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css"/>
 <style>
   :root {
     --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #222222; --border: #2e2e2e;
@@ -48,12 +48,13 @@
   .stat-unit { font-size: 0.7rem; color: var(--text-muted); font-family: 'DM Mono', monospace; }
   .footer { margin-top: 3rem; font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--text-dim); text-align: center; }
   .map-container { border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); margin-bottom: 0.75rem; }
-  #map { height: 280px; width: 100%; }
-  #map-end { height: 280px; width: 100%; }
+  #map, #map-end { height: 300px; width: 100%; }
   .map-hint { font-size: 0.78rem; color: var(--text-dim); font-family: 'DM Mono', monospace; margin-bottom: 0.75rem; }
   .tabs { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
   .tab { font-size: 0.78rem; font-family: 'DM Mono', monospace; padding: 0.4rem 0.8rem; border-radius: var(--radius); border: 1px solid var(--border); cursor: pointer; background: var(--surface2); color: var(--text-muted); transition: all 0.15s; }
   .tab.active { border-color: var(--accent); color: var(--accent); background: #1e2410; }
+  .leaflet-control-geocoder { border-radius: 8px !important; }
+  .leaflet-control-geocoder-form input { font-size: 13px; }
 </style>
 </head>
 <body>
@@ -77,11 +78,11 @@
 <div class="card">
   <div class="step-label">stap 02 — startpunt</div>
   <div class="tabs">
-    <div class="tab active" onclick="switchTab('start', 'map')">Kaart</div>
-    <div class="tab" onclick="switchTab('start', 'coords')">Coördinaten</div>
+    <div class="tab active" onclick="switchTab('start','map')">Kaart</div>
+    <div class="tab" onclick="switchTab('start','coords')">Coördinaten</div>
   </div>
   <div id="start-map-panel">
-    <div class="map-hint">Klik op de kaart om je startpunt te kiezen.</div>
+    <div class="map-hint">Zoek een adres via de zoekknop op de kaart, of klik direct op de kaart.</div>
     <div class="map-container"><div id="map"></div></div>
   </div>
   <div id="start-coords-panel" style="display:none">
@@ -89,7 +90,7 @@
       <input type="text" id="coords" placeholder="51.03150, 3.90481  of plak een Google Maps link">
       <button onclick="parseCoords()">Laden</button>
     </div>
-    <div class="hint">Google Maps → rechtsklik op startpunt → klik de coördinaten → plak hier.</div>
+    <div class="hint">Google Maps → rechtsklik → klik de coördinaten → plak hier.</div>
   </div>
   <div class="status" id="coord-status"></div>
 </div>
@@ -102,11 +103,11 @@
   </label>
   <div id="endpoint-fields" style="display:none">
     <div class="tabs">
-      <div class="tab active" onclick="switchTab('end', 'map')">Kaart</div>
-      <div class="tab" onclick="switchTab('end', 'coords')">Coördinaten</div>
+      <div class="tab active" onclick="switchTab('end','map')">Kaart</div>
+      <div class="tab" onclick="switchTab('end','coords')">Coördinaten</div>
     </div>
     <div id="end-map-panel">
-      <div class="map-hint">Klik op de kaart om je eindpunt te kiezen.</div>
+      <div class="map-hint">Zoek een adres via de zoekknop op de kaart, of klik direct op de kaart.</div>
       <div class="map-container"><div id="map-end"></div></div>
     </div>
     <div id="end-coords-panel" style="display:none">
@@ -114,7 +115,7 @@
         <input type="text" id="endcoords" placeholder="51.05431, 3.71823  of plak een Google Maps link">
         <button onclick="parseEndCoords()">Laden</button>
       </div>
-      <div class="hint">Google Maps → rechtsklik op eindpunt → klik de coördinaten → plak hier.</div>
+      <div class="hint">Google Maps → rechtsklik → klik de coördinaten → plak hier.</div>
     </div>
     <div class="status" id="endcoord-status"></div>
   </div>
@@ -143,43 +144,69 @@
 <div class="footer">GPX Route Extender — routing via OpenRouteService · kaart via OpenStreetMap</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
 <script>
 let gpxPoints = [], userCoord = null, endCoord = null, nearestIdx = 0;
-let startMarker = null, endMarker = null;
-let mapStart = null, mapEnd = null;
+let startMarker = null, endMarker = null, mapStart = null, mapEnd = null;
 
-const DEFAULT_COORD = { lat: 51.03150413693969, lon: 3.9048141052141334 };
+const DEFAULT = { lat: 51.03150413693969, lon: 3.9048141052141334 };
 
-const markerIcon = (color) => L.divIcon({
+const pin = (color) => L.divIcon({
   className: '',
   html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.5)"></div>`,
-  iconSize: [16, 16],
-  iconAnchor: [8, 8]
+  iconSize: [16,16], iconAnchor: [8,8]
 });
 
 window.addEventListener('load', () => {
-  mapStart = L.map('map').setView([DEFAULT_COORD.lat, DEFAULT_COORD.lon], 13);
+  mapStart = L.map('map').setView([DEFAULT.lat, DEFAULT.lon], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapStart);
-  startMarker = L.marker([DEFAULT_COORD.lat, DEFAULT_COORD.lon], { icon: markerIcon('#c8f55a'), draggable: true }).addTo(mapStart);
-  userCoord = { lat: DEFAULT_COORD.lat, lon: DEFAULT_COORD.lon };
-  setStatus('coord-status', 'Startpunt: ' + DEFAULT_COORD.lat.toFixed(5) + ', ' + DEFAULT_COORD.lon.toFixed(5), 'ok');
+
+  L.Control.geocoder({
+    defaultMarkGeocode: false,
+    placeholder: 'Zoek adres...',
+    geocoder: L.Control.Geocoder.nominatim({ geocodingQueryParams: { countrycodes: 'be,nl' } })
+  }).on('markgeocode', e => {
+    const { lat, lng } = e.geocode.center;
+    startMarker.setLatLng([lat, lng]);
+    mapStart.setView([lat, lng], 15);
+    setStartCoord(lat, lng);
+  }).addTo(mapStart);
+
+  startMarker = L.marker([DEFAULT.lat, DEFAULT.lon], { icon: pin('#c8f55a'), draggable: true }).addTo(mapStart);
+  userCoord = { lat: DEFAULT.lat, lon: DEFAULT.lon };
+  setStatus('coord-status', 'Startpunt: ' + DEFAULT.lat.toFixed(5) + ', ' + DEFAULT.lon.toFixed(5), 'ok');
   checkReady();
-  mapStart.on('click', e => { const { lat, lng } = e.latlng; startMarker.setLatLng([lat, lng]); setStartCoord(lat, lng); });
-  startMarker.on('dragend', e => { const { lat, lng } = e.target.getLatLng(); setStartCoord(lat, lng); });
+
+  mapStart.on('click', e => { startMarker.setLatLng(e.latlng); setStartCoord(e.latlng.lat, e.latlng.lng); });
+  startMarker.on('dragend', e => { const ll = e.target.getLatLng(); setStartCoord(ll.lat, ll.lng); });
 });
 
 function initEndMap() {
   if (mapEnd) return;
-  const center = userCoord ? [userCoord.lat, userCoord.lon] : [DEFAULT_COORD.lat, DEFAULT_COORD.lon];
-  mapEnd = L.map('map-end').setView(center, 13);
+  const c = userCoord || DEFAULT;
+  mapEnd = L.map('map-end').setView([c.lat, c.lon], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapEnd);
-  mapEnd.on('click', e => {
-    const { lat, lng } = e.latlng;
+
+  L.Control.geocoder({
+    defaultMarkGeocode: false,
+    placeholder: 'Zoek adres...',
+    geocoder: L.Control.Geocoder.nominatim({ geocodingQueryParams: { countrycodes: 'be,nl' } })
+  }).on('markgeocode', e => {
+    const { lat, lng } = e.geocode.center;
     if (!endMarker) {
-      endMarker = L.marker([lat, lng], { icon: markerIcon('#ff5a5a'), draggable: true }).addTo(mapEnd);
-      endMarker.on('dragend', e => { const { lat, lng } = e.target.getLatLng(); setEndCoord(lat, lng); });
+      endMarker = L.marker([lat, lng], { icon: pin('#ff5a5a'), draggable: true }).addTo(mapEnd);
+      endMarker.on('dragend', e => { const ll = e.target.getLatLng(); setEndCoord(ll.lat, ll.lng); });
     } else { endMarker.setLatLng([lat, lng]); }
+    mapEnd.setView([lat, lng], 15);
     setEndCoord(lat, lng);
+  }).addTo(mapEnd);
+
+  mapEnd.on('click', e => {
+    if (!endMarker) {
+      endMarker = L.marker(e.latlng, { icon: pin('#ff5a5a'), draggable: true }).addTo(mapEnd);
+      endMarker.on('dragend', e => { const ll = e.target.getLatLng(); setEndCoord(ll.lat, ll.lng); });
+    } else { endMarker.setLatLng(e.latlng); }
+    setEndCoord(e.latlng.lat, e.latlng.lng);
   });
 }
 
@@ -197,25 +224,27 @@ function setEndCoord(lat, lon) {
 }
 
 function switchTab(which, mode) {
-  const prefix = which === 'start' ? 'start' : 'end';
-  const mapPanel = document.getElementById(prefix + '-map-panel');
-  const coordPanel = document.getElementById(prefix + '-coords-panel');
-  const tabs = (which === 'start' ? document.querySelector('#card-stats').previousElementSibling : document.getElementById('endpoint-fields')).querySelectorAll('.tab');
+  const mp = document.getElementById(which + '-map-panel');
+  const cp = document.getElementById(which + '-coords-panel');
+  const card = which === 'start'
+    ? document.getElementById('card-stats').previousElementSibling
+    : document.getElementById('endpoint-fields');
+  const tabs = card.querySelectorAll('.tab');
   if (mode === 'map') {
-    mapPanel.style.display = 'block'; coordPanel.style.display = 'none';
+    mp.style.display = 'block'; cp.style.display = 'none';
     tabs[0].classList.add('active'); tabs[1].classList.remove('active');
-    if (which === 'end') { setTimeout(() => { if (mapEnd) mapEnd.invalidateSize(); }, 50); }
+    if (which === 'end') setTimeout(() => mapEnd && mapEnd.invalidateSize(), 50);
   } else {
-    mapPanel.style.display = 'none'; coordPanel.style.display = 'block';
+    mp.style.display = 'none'; cp.style.display = 'block';
     tabs[0].classList.remove('active'); tabs[1].classList.add('active');
   }
 }
 
 function toggleEndpoint() {
-  const sameAsStart = document.getElementById('same-as-start').checked;
-  document.getElementById('endpoint-fields').style.display = sameAsStart ? 'none' : 'block';
-  if (!sameAsStart) { setTimeout(() => { initEndMap(); if (mapEnd) mapEnd.invalidateSize(); }, 50); }
-  if (sameAsStart) { endCoord = null; setStatus('endcoord-status', '', ''); }
+  const same = document.getElementById('same-as-start').checked;
+  document.getElementById('endpoint-fields').style.display = same ? 'none' : 'block';
+  if (!same) setTimeout(() => { initEndMap(); mapEnd && mapEnd.invalidateSize(); }, 50);
+  if (same) { endCoord = null; setStatus('endcoord-status', '', ''); }
   checkReady();
 }
 
@@ -223,7 +252,8 @@ function parseCoords() {
   const coord = extractCoord(document.getElementById('coords').value.trim());
   if (coord) {
     userCoord = coord;
-    if (startMarker) { startMarker.setLatLng([coord.lat, coord.lon]); mapStart.setView([coord.lat, coord.lon], 13); }
+    startMarker && startMarker.setLatLng([coord.lat, coord.lon]);
+    mapStart && mapStart.setView([coord.lat, coord.lon], 13);
     setStatus('coord-status', 'Startpunt: ' + coord.lat.toFixed(5) + ', ' + coord.lon.toFixed(5), 'ok');
     if (gpxPoints.length) nearestIdx = findNearest(userCoord, gpxPoints);
     updateStats(); checkReady();
@@ -236,9 +266,9 @@ function parseEndCoords() {
     endCoord = coord;
     if (mapEnd) {
       if (!endMarker) {
-        endMarker = L.marker([coord.lat, coord.lon], { icon: markerIcon('#ff5a5a'), draggable: true }).addTo(mapEnd);
-        endMarker.on('dragend', e => { const { lat, lng } = e.target.getLatLng(); setEndCoord(lat, lng); });
-      } else { endMarker.setLatLng([coord.lat, coord.lon]); }
+        endMarker = L.marker([coord.lat, coord.lon], { icon: pin('#ff5a5a'), draggable: true }).addTo(mapEnd);
+        endMarker.on('dragend', e => { const ll = e.target.getLatLng(); setEndCoord(ll.lat, ll.lng); });
+      } else endMarker.setLatLng([coord.lat, coord.lon]);
       mapEnd.setView([coord.lat, coord.lon], 13);
     }
     setStatus('endcoord-status', 'Eindpunt: ' + coord.lat.toFixed(5) + ', ' + coord.lon.toFixed(5), 'ok');
@@ -248,8 +278,8 @@ function parseEndCoords() {
 
 function extractCoord(raw) {
   let lat = null, lon = null;
-  const plain = /^(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)$/.exec(raw);
-  if (plain) { lat = parseFloat(plain[1]); lon = parseFloat(plain[2]); }
+  const p = /^(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)$/.exec(raw);
+  if (p) { lat = parseFloat(p[1]); lon = parseFloat(p[2]); }
   if (!lat) { const m = /@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
   if (!lat) { const m = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
   if (!lat) { const m = /ll=(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
@@ -273,64 +303,58 @@ function handleFile(f) {
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(e.target.result, 'application/xml');
-      const trkpts = doc.querySelectorAll('trkpt, rtept');
-      if (trkpts.length < 2) { setStatus('gpx-status', 'Te weinig punten.', 'err'); return; }
-      gpxPoints = Array.from(trkpts).map(p => ({ lat: parseFloat(p.getAttribute('lat')), lon: parseFloat(p.getAttribute('lon')), el: p.querySelector('ele') ? parseFloat(p.querySelector('ele').textContent) : null }));
+      const doc = new DOMParser().parseFromString(e.target.result, 'application/xml');
+      const pts = doc.querySelectorAll('trkpt, rtept');
+      if (pts.length < 2) { setStatus('gpx-status', 'Te weinig punten.', 'err'); return; }
+      gpxPoints = Array.from(pts).map(p => ({ lat: parseFloat(p.getAttribute('lat')), lon: parseFloat(p.getAttribute('lon')), el: p.querySelector('ele') ? parseFloat(p.querySelector('ele').textContent) : null }));
       setStatus('gpx-status', gpxPoints.length + ' trackpunten geladen.', 'ok');
       if (userCoord) nearestIdx = findNearest(userCoord, gpxPoints);
       updateStats(); checkReady();
-    } catch (err) { setStatus('gpx-status', 'Kon bestand niet verwerken.', 'err'); }
+    } catch { setStatus('gpx-status', 'Kon bestand niet verwerken.', 'err'); }
   };
   reader.readAsText(f);
 }
 
-function findNearest(coord, pts) { let best = 0, bestD = Infinity; pts.forEach((p, i) => { const d = haversine(coord, p); if (d < bestD) { bestD = d; best = i; } }); return best; }
-function haversine(a, b) { const R = 6371000, dLat = (b.lat - a.lat) * Math.PI / 180, dLon = (b.lon - a.lon) * Math.PI / 180; const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)); }
-function totalDist(pts) { let d = 0; for (let i = 1; i < pts.length; i++) d += haversine(pts[i - 1], pts[i]); return d; }
+function findNearest(c, pts) { let b = 0, bd = Infinity; pts.forEach((p, i) => { const d = hav(c, p); if (d < bd) { bd = d; b = i; } }); return b; }
+function hav(a, b) { const R = 6371000, dLat = (b.lat-a.lat)*Math.PI/180, dLon = (b.lon-a.lon)*Math.PI/180, x = Math.sin(dLat/2)**2 + Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)**2; return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)); }
+function totalDist(pts) { let d = 0; for (let i = 1; i < pts.length; i++) d += hav(pts[i-1], pts[i]); return d; }
 
 function updateStats() {
   if (!gpxPoints.length) return;
   document.getElementById('card-stats').style.display = 'block';
   const dist = totalDist(gpxPoints);
-  const toNearest = userCoord ? haversine(userCoord, gpxPoints[nearestIdx]) : null;
-  const extra = toNearest ? toNearest * 2 : 0;
-  document.getElementById('s-orig').textContent = (dist / 1000).toFixed(1);
-  document.getElementById('s-extra').textContent = toNearest ? (extra / 1000).toFixed(1) : '--';
-  document.getElementById('s-total').textContent = toNearest ? ((dist + extra) / 1000).toFixed(1) : '--';
+  const toN = userCoord ? hav(userCoord, gpxPoints[nearestIdx]) : null;
+  document.getElementById('s-orig').textContent = (dist/1000).toFixed(1);
+  document.getElementById('s-extra').textContent = toN ? (toN*2/1000).toFixed(1) : '--';
+  document.getElementById('s-total').textContent = toN ? ((dist+toN*2)/1000).toFixed(1) : '--';
 }
 
 function checkReady() {
-  const sameAsStart = document.getElementById('same-as-start').checked;
-  document.getElementById('gen-btn').disabled = !(gpxPoints.length && userCoord && (sameAsStart || endCoord));
+  const same = document.getElementById('same-as-start').checked;
+  document.getElementById('gen-btn').disabled = !(gpxPoints.length && userCoord && (same || endCoord));
 }
 
 async function getRoute(from, to) {
   const res = await fetch('/api/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coordinates: [[from.lon, from.lat], [to.lon, to.lat]] }) });
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || 'API fout ' + res.status); }
-  const data = await res.json();
-  return data.features[0].geometry.coordinates.map(c => ({ lon: c[0], lat: c[1], el: null }));
+  return (await res.json()).features[0].geometry.coordinates.map(c => ({ lon: c[0], lat: c[1], el: null }));
 }
 
 async function generate() {
   const btn = document.getElementById('gen-btn');
   btn.disabled = true; btn.textContent = 'Bezig...';
   try {
-    const finalEndCoord = document.getElementById('same-as-start').checked ? userCoord : endCoord;
+    const finalEnd = document.getElementById('same-as-start').checked ? userCoord : endCoord;
     nearestIdx = findNearest(userCoord, gpxPoints);
-    const entryPt = gpxPoints[nearestIdx];
-    const exitPt = nearestIdx === 0 ? gpxPoints[gpxPoints.length - 1] : gpxPoints[nearestIdx - 1];
+    const entry = gpxPoints[nearestIdx];
+    const exit = nearestIdx === 0 ? gpxPoints[gpxPoints.length-1] : gpxPoints[nearestIdx-1];
     setStatus('gen-status', 'Aanrijweg berekenen...', '');
-    const approachPts = await getRoute(userCoord, entryPt);
+    const approach = await getRoute(userCoord, entry);
     setStatus('gen-status', 'Terugweg berekenen...', '');
-    const returnPts = await getRoute(exitPt, finalEndCoord);
-    const reordered = [...gpxPoints.slice(nearestIdx), ...gpxPoints.slice(0, nearestIdx)];
-    const allPts = [...approachPts, ...reordered, ...returnPts];
-    const gpx = buildGPX(allPts);
+    const ret = await getRoute(exit, finalEnd);
+    const allPts = [...approach, ...gpxPoints.slice(nearestIdx), ...gpxPoints.slice(0, nearestIdx), ...ret];
     const rawName = document.getElementById('outputname').value.trim();
-    const filename = rawName ? rawName.replace(/\.gpx$/i, '') + '.gpx' : 'route_uitgebreid.gpx';
-    download(gpx, filename);
+    download(buildGPX(allPts), rawName ? rawName.replace(/\.gpx$/i,'') + '.gpx' : 'route_uitgebreid.gpx');
     setStatus('gen-status', 'Klaar. Bestand gedownload.', 'ok');
   } catch (e) { setStatus('gen-status', 'Fout: ' + e.message, 'err'); }
   btn.disabled = false; btn.textContent = 'Genereer & download GPX';
@@ -338,21 +362,17 @@ async function generate() {
 
 function buildGPX(pts) {
   const hdr = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX Route Extender" xmlns="http://www.topografix.com/GPX/1/1">\n<trk><n>Uitgebreide route</n><trkseg>\n`;
-  const ftr = `</trkseg></trk></gpx>`;
-  return hdr + pts.map(p => { const el = p.el != null ? `<ele>${p.el}</ele>` : ''; return `<trkpt lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}">${el}</trkpt>`; }).join('\n') + '\n' + ftr;
+  return hdr + pts.map(p => `<trkpt lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}">${p.el!=null?`<ele>${p.el}</ele>`:''}</trkpt>`).join('\n') + '\n</trkseg></trk></gpx>';
 }
 
 function download(content, filename) {
-  const blob = new Blob([content], { type: 'application/gpx+xml' });
-  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
+  a.href = URL.createObjectURL(new Blob([content], { type: 'application/gpx+xml' }));
+  a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
 function setStatus(id, msg, type) { const el = document.getElementById(id); el.textContent = msg; el.className = 'status' + (type ? ' ' + type : ''); }
 </script>
 </body>
 </html>
-```
