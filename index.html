@@ -1,5 +1,4 @@
-
-
+```html
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -7,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GPX Route Extender</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
   :root {
     --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #222222; --border: #2e2e2e;
@@ -26,7 +26,7 @@
   .drop-zone .icon { font-size: 2rem; margin-bottom: 0.75rem; display: block; }
   .drop-zone p { color: var(--text-muted); font-size: 0.9rem; }
   .drop-zone .loaded { font-family: 'DM Mono', monospace; color: var(--accent); font-size: 0.85rem; margin-top: 0.5rem; }
-  .input-row { display: flex; gap: 0.5rem; }
+  .input-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
   input[type="text"] { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.85rem; padding: 0.65rem 0.9rem; outline: none; transition: border-color 0.2s; width: 100%; }
   input[type="text"]:focus { border-color: var(--accent); }
   input[type="text"]::placeholder { color: var(--text-dim); }
@@ -47,6 +47,13 @@
   .stat-val { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
   .stat-unit { font-size: 0.7rem; color: var(--text-muted); font-family: 'DM Mono', monospace; }
   .footer { margin-top: 3rem; font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--text-dim); text-align: center; }
+  .map-container { border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); margin-bottom: 0.75rem; }
+  #map { height: 280px; width: 100%; }
+  #map-end { height: 280px; width: 100%; }
+  .map-hint { font-size: 0.78rem; color: var(--text-dim); font-family: 'DM Mono', monospace; margin-bottom: 0.75rem; }
+  .tabs { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+  .tab { font-size: 0.78rem; font-family: 'DM Mono', monospace; padding: 0.4rem 0.8rem; border-radius: var(--radius); border: 1px solid var(--border); cursor: pointer; background: var(--surface2); color: var(--text-muted); transition: all 0.15s; }
+  .tab.active { border-color: var(--accent); color: var(--accent); background: #1e2410; }
 </style>
 </head>
 <body>
@@ -69,11 +76,21 @@
 
 <div class="card">
   <div class="step-label">stap 02 — startpunt</div>
-  <div class="input-row">
-    <input type="text" id="coords" value="51.03150413693969, 3.9048141052141334">
-    <button onclick="parseCoords()">Laden</button>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('start', 'map')">Kaart</div>
+    <div class="tab" onclick="switchTab('start', 'coords')">Coördinaten</div>
   </div>
-  <div class="hint">Pas aan via Google Maps → rechtsklik op startpunt → klik de coördinaten → plak hier.</div>
+  <div id="start-map-panel">
+    <div class="map-hint">Klik op de kaart om je startpunt te kiezen.</div>
+    <div class="map-container"><div id="map"></div></div>
+  </div>
+  <div id="start-coords-panel" style="display:none">
+    <div class="input-row">
+      <input type="text" id="coords" placeholder="51.03150, 3.90481  of plak een Google Maps link">
+      <button onclick="parseCoords()">Laden</button>
+    </div>
+    <div class="hint">Google Maps → rechtsklik op startpunt → klik de coördinaten → plak hier.</div>
+  </div>
   <div class="status" id="coord-status"></div>
 </div>
 
@@ -84,11 +101,21 @@
     Zelfde als startpunt
   </label>
   <div id="endpoint-fields" style="display:none">
-    <div class="input-row">
-      <input type="text" id="endcoords" placeholder="51.05431, 3.71823  of plak een Google Maps link">
-      <button onclick="parseEndCoords()">Laden</button>
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('end', 'map')">Kaart</div>
+      <div class="tab" onclick="switchTab('end', 'coords')">Coördinaten</div>
     </div>
-    <div class="hint">Google Maps → rechtsklik op eindpunt → klik de coördinaten → plak hier.</div>
+    <div id="end-map-panel">
+      <div class="map-hint">Klik op de kaart om je eindpunt te kiezen.</div>
+      <div class="map-container"><div id="map-end"></div></div>
+    </div>
+    <div id="end-coords-panel" style="display:none">
+      <div class="input-row">
+        <input type="text" id="endcoords" placeholder="51.05431, 3.71823  of plak een Google Maps link">
+        <button onclick="parseEndCoords()">Laden</button>
+      </div>
+      <div class="hint">Google Maps → rechtsklik op eindpunt → klik de coördinaten → plak hier.</div>
+    </div>
     <div class="status" id="endcoord-status"></div>
   </div>
 </div>
@@ -113,14 +140,128 @@
   <div class="status" id="gen-status"></div>
 </div>
 
-<div class="footer">GPX Route Extender — routing via OpenRouteService</div>
+<div class="footer">GPX Route Extender — routing via OpenRouteService · kaart via OpenStreetMap</div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 let gpxPoints = [], userCoord = null, endCoord = null, nearestIdx = 0;
+let startMarker = null, endMarker = null;
+let mapStart = null, mapEnd = null;
+
+const DEFAULT_COORD = { lat: 51.03150413693969, lon: 3.9048141052141334 };
+
+const markerIcon = (color) => L.divIcon({
+  className: '',
+  html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.5)"></div>`,
+  iconSize: [16, 16],
+  iconAnchor: [8, 8]
+});
+
+window.addEventListener('load', () => {
+  mapStart = L.map('map').setView([DEFAULT_COORD.lat, DEFAULT_COORD.lon], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapStart);
+  startMarker = L.marker([DEFAULT_COORD.lat, DEFAULT_COORD.lon], { icon: markerIcon('#c8f55a'), draggable: true }).addTo(mapStart);
+  userCoord = { lat: DEFAULT_COORD.lat, lon: DEFAULT_COORD.lon };
+  setStatus('coord-status', 'Startpunt: ' + DEFAULT_COORD.lat.toFixed(5) + ', ' + DEFAULT_COORD.lon.toFixed(5), 'ok');
+  checkReady();
+  mapStart.on('click', e => { const { lat, lng } = e.latlng; startMarker.setLatLng([lat, lng]); setStartCoord(lat, lng); });
+  startMarker.on('dragend', e => { const { lat, lng } = e.target.getLatLng(); setStartCoord(lat, lng); });
+});
+
+function initEndMap() {
+  if (mapEnd) return;
+  const center = userCoord ? [userCoord.lat, userCoord.lon] : [DEFAULT_COORD.lat, DEFAULT_COORD.lon];
+  mapEnd = L.map('map-end').setView(center, 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapEnd);
+  mapEnd.on('click', e => {
+    const { lat, lng } = e.latlng;
+    if (!endMarker) {
+      endMarker = L.marker([lat, lng], { icon: markerIcon('#ff5a5a'), draggable: true }).addTo(mapEnd);
+      endMarker.on('dragend', e => { const { lat, lng } = e.target.getLatLng(); setEndCoord(lat, lng); });
+    } else { endMarker.setLatLng([lat, lng]); }
+    setEndCoord(lat, lng);
+  });
+}
+
+function setStartCoord(lat, lon) {
+  userCoord = { lat, lon };
+  setStatus('coord-status', 'Startpunt: ' + lat.toFixed(5) + ', ' + lon.toFixed(5), 'ok');
+  if (gpxPoints.length) nearestIdx = findNearest(userCoord, gpxPoints);
+  updateStats(); checkReady();
+}
+
+function setEndCoord(lat, lon) {
+  endCoord = { lat, lon };
+  setStatus('endcoord-status', 'Eindpunt: ' + lat.toFixed(5) + ', ' + lon.toFixed(5), 'ok');
+  checkReady();
+}
+
+function switchTab(which, mode) {
+  const prefix = which === 'start' ? 'start' : 'end';
+  const mapPanel = document.getElementById(prefix + '-map-panel');
+  const coordPanel = document.getElementById(prefix + '-coords-panel');
+  const tabs = (which === 'start' ? document.querySelector('#card-stats').previousElementSibling : document.getElementById('endpoint-fields')).querySelectorAll('.tab');
+  if (mode === 'map') {
+    mapPanel.style.display = 'block'; coordPanel.style.display = 'none';
+    tabs[0].classList.add('active'); tabs[1].classList.remove('active');
+    if (which === 'end') { setTimeout(() => { if (mapEnd) mapEnd.invalidateSize(); }, 50); }
+  } else {
+    mapPanel.style.display = 'none'; coordPanel.style.display = 'block';
+    tabs[0].classList.remove('active'); tabs[1].classList.add('active');
+  }
+}
+
+function toggleEndpoint() {
+  const sameAsStart = document.getElementById('same-as-start').checked;
+  document.getElementById('endpoint-fields').style.display = sameAsStart ? 'none' : 'block';
+  if (!sameAsStart) { setTimeout(() => { initEndMap(); if (mapEnd) mapEnd.invalidateSize(); }, 50); }
+  if (sameAsStart) { endCoord = null; setStatus('endcoord-status', '', ''); }
+  checkReady();
+}
+
+function parseCoords() {
+  const coord = extractCoord(document.getElementById('coords').value.trim());
+  if (coord) {
+    userCoord = coord;
+    if (startMarker) { startMarker.setLatLng([coord.lat, coord.lon]); mapStart.setView([coord.lat, coord.lon], 13); }
+    setStatus('coord-status', 'Startpunt: ' + coord.lat.toFixed(5) + ', ' + coord.lon.toFixed(5), 'ok');
+    if (gpxPoints.length) nearestIdx = findNearest(userCoord, gpxPoints);
+    updateStats(); checkReady();
+  } else { userCoord = null; setStatus('coord-status', 'Geen coördinaten herkend.', 'err'); }
+}
+
+function parseEndCoords() {
+  const coord = extractCoord(document.getElementById('endcoords').value.trim());
+  if (coord) {
+    endCoord = coord;
+    if (mapEnd) {
+      if (!endMarker) {
+        endMarker = L.marker([coord.lat, coord.lon], { icon: markerIcon('#ff5a5a'), draggable: true }).addTo(mapEnd);
+        endMarker.on('dragend', e => { const { lat, lng } = e.target.getLatLng(); setEndCoord(lat, lng); });
+      } else { endMarker.setLatLng([coord.lat, coord.lon]); }
+      mapEnd.setView([coord.lat, coord.lon], 13);
+    }
+    setStatus('endcoord-status', 'Eindpunt: ' + coord.lat.toFixed(5) + ', ' + coord.lon.toFixed(5), 'ok');
+    checkReady();
+  } else { endCoord = null; setStatus('endcoord-status', 'Geen coördinaten herkend.', 'err'); }
+}
+
+function extractCoord(raw) {
+  let lat = null, lon = null;
+  const plain = /^(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)$/.exec(raw);
+  if (plain) { lat = parseFloat(plain[1]); lon = parseFloat(plain[2]); }
+  if (!lat) { const m = /@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
+  if (!lat) { const m = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
+  if (!lat) { const m = /ll=(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
+  if (lat && lon && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) return { lat, lon };
+  return null;
+}
+
+document.getElementById('coords').addEventListener('keydown', e => { if (e.key === 'Enter') parseCoords(); });
+document.getElementById('endcoords').addEventListener('keydown', e => { if (e.key === 'Enter') parseEndCoords(); });
 
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
-
 dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('over'); });
 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
 dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('over'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
@@ -138,46 +279,12 @@ function handleFile(f) {
       if (trkpts.length < 2) { setStatus('gpx-status', 'Te weinig punten.', 'err'); return; }
       gpxPoints = Array.from(trkpts).map(p => ({ lat: parseFloat(p.getAttribute('lat')), lon: parseFloat(p.getAttribute('lon')), el: p.querySelector('ele') ? parseFloat(p.querySelector('ele').textContent) : null }));
       setStatus('gpx-status', gpxPoints.length + ' trackpunten geladen.', 'ok');
-      if (userCoord) { nearestIdx = findNearest(userCoord, gpxPoints); }
+      if (userCoord) nearestIdx = findNearest(userCoord, gpxPoints);
       updateStats(); checkReady();
     } catch (err) { setStatus('gpx-status', 'Kon bestand niet verwerken.', 'err'); }
   };
   reader.readAsText(f);
 }
-
-function toggleEndpoint() {
-  const sameAsStart = document.getElementById('same-as-start').checked;
-  document.getElementById('endpoint-fields').style.display = sameAsStart ? 'none' : 'block';
-  if (sameAsStart) { endCoord = null; setStatus('endcoord-status', '', ''); }
-  checkReady();
-}
-
-function parseCoords() {
-  const coord = extractCoord(document.getElementById('coords').value.trim());
-  if (coord) { userCoord = coord; setStatus('coord-status', 'Startpunt: ' + coord.lat.toFixed(5) + ', ' + coord.lon.toFixed(5), 'ok'); if (gpxPoints.length) nearestIdx = findNearest(userCoord, gpxPoints); updateStats(); checkReady(); }
-  else { userCoord = null; setStatus('coord-status', 'Geen coördinaten herkend.', 'err'); }
-}
-
-function parseEndCoords() {
-  const coord = extractCoord(document.getElementById('endcoords').value.trim());
-  if (coord) { endCoord = coord; setStatus('endcoord-status', 'Eindpunt: ' + coord.lat.toFixed(5) + ', ' + coord.lon.toFixed(5), 'ok'); checkReady(); }
-  else { endCoord = null; setStatus('endcoord-status', 'Geen coördinaten herkend.', 'err'); }
-}
-
-function extractCoord(raw) {
-  let lat = null, lon = null;
-  const plain = /^(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)$/.exec(raw);
-  if (plain) { lat = parseFloat(plain[1]); lon = parseFloat(plain[2]); }
-  if (!lat) { const m = /@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
-  if (!lat) { const m = /[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
-  if (!lat) { const m = /ll=(-?\d+\.\d+),(-?\d+\.\d+)/.exec(raw); if (m) { lat = parseFloat(m[1]); lon = parseFloat(m[2]); } }
-  if (lat && lon && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) return { lat, lon };
-  return null;
-}
-
-document.getElementById('coords').addEventListener('keydown', e => { if (e.key === 'Enter') parseCoords(); });
-document.getElementById('endcoords').addEventListener('keydown', e => { if (e.key === 'Enter') parseEndCoords(); });
-window.addEventListener('load', () => parseCoords());
 
 function findNearest(coord, pts) { let best = 0, bestD = Infinity; pts.forEach((p, i) => { const d = haversine(coord, p); if (d < bestD) { bestD = d; best = i; } }); return best; }
 function haversine(a, b) { const R = 6371000, dLat = (b.lat - a.lat) * Math.PI / 180, dLon = (b.lon - a.lon) * Math.PI / 180; const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)); }
