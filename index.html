@@ -193,7 +193,7 @@
   <div class="step-label">Overzicht</div>
   <div class="stats-grid">
     <div class="stat"><div class="stat-label">Originele rondes</div><div class="stat-val" id="s-orig">--</div><div class="stat-unit">km</div></div>
-    <div class="stat"><div class="stat-label">Nieuwe route (geschat)</div><div class="stat-val" id="s-total">--</div><div class="stat-unit">km</div></div>
+    <div class="stat"><div class="stat-label">Nieuwe route</div><div class="stat-val" id="s-total">--</div><div class="stat-unit" id="s-total-unit">km (schatting)</div></div>
   </div>
 </div>
 
@@ -726,6 +726,16 @@ async function buildPreview() {
       legendHTML += '<span><strong style="color:#ff6b35">━</strong> Terugweg</span>';
       legendEl.innerHTML = legendHTML;
     }
+
+    // Calculate real total distance from actual routed segments
+    const realDist = (
+      totalDist(approachPts) +
+      segments.reduce((s,seg) => s + totalDist(seg.pts), 0) +
+      connections.reduce((s,conn) => s + totalDist(conn), 0) +
+      totalDist(returnPts)
+    ) / 1000;
+    document.getElementById('s-total').textContent = realDist.toFixed(1);
+    document.getElementById('s-total-unit').textContent = 'km (werkelijk)';
 
     setStatus('preview-status','Klaar.','ok');
     document.getElementById('preview-card').scrollIntoView({behavior:'smooth',block:'start'});
