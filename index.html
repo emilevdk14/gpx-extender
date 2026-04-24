@@ -90,8 +90,12 @@
     <div class="tab" onclick="switchStartTab('coords')">Coördinaten</div>
   </div>
   <div id="start-map-panel">
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
+      <button id="btn-mode-start" onclick="setMapMode('start')" style="flex:1;background:#1e2a3a;border:2px solid #4a9eff;color:#4a9eff;font-weight:600;border-radius:8px;padding:0.5rem;cursor:pointer;font-size:0.85rem;">Startpunt</button>
+      <button id="btn-mode-entry" onclick="setMapMode('entry')" style="flex:1;background:var(--surface2);border:2px solid var(--border);color:var(--text-muted);font-weight:600;border-radius:8px;padding:0.5rem;cursor:pointer;font-size:0.85rem;">Instappunt</button>
+    </div>
     <div class="map-hint">
-      <strong style="color:var(--text-muted)">Blauwe pin</strong> = jouw startpunt (klik/sleep of zoek adres) &nbsp;·&nbsp;
+      <strong style="color:#4a9eff">Blauwe pin</strong> = jouw startpunt (klik/sleep of zoek adres) &nbsp;·&nbsp;
       <strong style="color:#ffcc00">Gele pin</strong> = instappunt op de route (klik op de blauwe lijn om te wijzigen)
     </div>
     <div class="map-container"><div id="map-start"></div></div>
@@ -180,6 +184,7 @@
 <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
 <script>
 let gpxPoints = [], userCoord = null, endCoord = null, nearestIdx = 0, manualEntry = false;
+let mapMode = 'start';
 let startMarker = null, endMarker = null, entryMarker = null;
 let mapStart = null, mapEnd = null;
 let gpxPolyline = null;
@@ -202,9 +207,20 @@ window.addEventListener('load', () => {
     geocoder: L.Control.Geocoder.nominatim({ geocodingQueryParams: { countrycodes: 'be,nl' } })
   }).on('markgeocode', e => {
     const { lat, lng } = e.geocode.center;
-    startMarker.setLatLng([lat, lng]);
-    mapStart.setView([lat, lng], 15);
-    setStartCoord(lat, lng);
+    if (mapMode === 'start') {
+      startMarker.setLatLng([lat, lng]);
+      mapStart.setView([lat, lng], 15);
+      setStartCoord(lat, lng);
+    } else if (mapMode === 'entry' && gpxPoints.length) {
+      const clicked = { lat, lon: lng };
+      nearestIdx = findNearest(clicked, gpxPoints);
+      manualEntry = true;
+      mapStart.setView([lat, lng], 15);
+      updateEntryMarker();
+      updateStats();
+    } else {
+      mapStart.setView([lat, lng], 15);
+    }
   }).addTo(mapStart);
 
   startMarker = L.marker([DEFAULT.lat, DEFAULT.lon], { icon: pin('#4a9eff'), draggable: true }).addTo(mapStart);
@@ -212,7 +228,18 @@ window.addEventListener('load', () => {
   setStatus('coord-status', 'Startpunt: ' + DEFAULT.lat.toFixed(5) + ', ' + DEFAULT.lon.toFixed(5), 'ok');
   checkReady();
 
-  mapStart.on('click', e => { startMarker.setLatLng(e.latlng); setStartCoord(e.latlng.lat, e.latlng.lng); });
+  mapStart.on('click', e => {
+    if (mapMode === 'start') {
+      startMarker.setLatLng(e.latlng);
+      setStartCoord(e.latlng.lat, e.latlng.lng);
+    } else if (mapMode === 'entry' && gpxPoints.length) {
+      const clicked = { lat: e.latlng.lat, lon: e.latlng.lng };
+      nearestIdx = findNearest(clicked, gpxPoints);
+      manualEntry = true;
+      updateEntryMarker();
+      updateStats();
+    }
+  });
   startMarker.on('dragend', e => { const ll = e.target.getLatLng(); setStartCoord(ll.lat, ll.lng); });
 
   document.querySelectorAll('.route-type-option input[type="radio"]').forEach(r => {
@@ -225,26 +252,20 @@ window.addEventListener('load', () => {
 
 function drawGpxOnMap() {
   if (!mapStart || !gpxPoints.length) return;
-
   if (gpxPolyline) { mapStart.removeLayer(gpxPolyline); gpxPolyline = null; }
-
   const latlngs = gpxPoints.map(p => [p.lat, p.lon]);
   gpxPolyline = L.polyline(latlngs, { color: '#4a9eff', weight: 3, opacity: 0.8 }).addTo(mapStart);
-
-  // fit map to show both gpx and start marker
   const bounds = gpxPolyline.getBounds();
   if (userCoord) bounds.extend([userCoord.lat, userCoord.lon]);
   mapStart.fitBounds(bounds, { padding: [20, 20] });
-
-  // click on polyline to set manual entry point
   gpxPolyline.on('click', e => {
+    L.DomEvent.stopPropagation(e);
     const clicked = { lat: e.latlng.lat, lon: e.latlng.lng };
     nearestIdx = findNearest(clicked, gpxPoints);
     manualEntry = true;
     updateEntryMarker();
     updateStats();
   });
-
   updateEntryMarker();
 }
 
@@ -265,7 +286,6 @@ function initEndMap() {
   const c = userCoord || DEFAULT;
   mapEnd = L.map('map-end').setView([c.lat, c.lon], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapEnd);
-
   L.Control.geocoder({
     defaultMarkGeocode: false,
     placeholder: 'Zoek adres...',
@@ -279,7 +299,6 @@ function initEndMap() {
     mapEnd.setView([lat, lng], 15);
     setEndCoord(lat, lng);
   }).addTo(mapEnd);
-
   mapEnd.on('click', e => {
     if (!endMarker) {
       endMarker = L.marker(e.latlng, { icon: pin('#ff6b35'), draggable: true }).addTo(mapEnd);
@@ -289,13 +308,23 @@ function initEndMap() {
   });
 }
 
+function setMapMode(mode) {
+  mapMode = mode;
+  const btnStart = document.getElementById('btn-mode-start');
+  const btnEntry = document.getElementById('btn-mode-entry');
+  if (mode === 'start') {
+    btnStart.style.background = '#1e2a3a'; btnStart.style.borderColor = '#4a9eff'; btnStart.style.color = '#4a9eff';
+    btnEntry.style.background = 'var(--surface2)'; btnEntry.style.borderColor = 'var(--border)'; btnEntry.style.color = 'var(--text-muted)';
+  } else {
+    btnEntry.style.background = '#2a2000'; btnEntry.style.borderColor = '#ffcc00'; btnEntry.style.color = '#ffcc00';
+    btnStart.style.background = 'var(--surface2)'; btnStart.style.borderColor = 'var(--border)'; btnStart.style.color = 'var(--text-muted)';
+  }
+}
+
 function setStartCoord(lat, lon) {
   userCoord = { lat, lon };
   setStatus('coord-status', 'Startpunt: ' + lat.toFixed(5) + ', ' + lon.toFixed(5), 'ok');
-  if (gpxPoints.length && !manualEntry) {
-    nearestIdx = findNearest(userCoord, gpxPoints);
-    updateEntryMarker();
-  }
+  if (gpxPoints.length && !manualEntry) { nearestIdx = findNearest(userCoord, gpxPoints); updateEntryMarker(); }
   updateStats(); checkReady();
 }
 
@@ -450,15 +479,12 @@ async function generate() {
     const finalEnd = same ? userCoord : endCoord;
     const approachProfile = getProfile('approach-type');
     const returnProfile = same ? getProfile('return-type-same') : getProfile('return-type');
-
     const entry = gpxPoints[nearestIdx];
     const exit = nearestIdx === 0 ? gpxPoints[gpxPoints.length-1] : gpxPoints[nearestIdx-1];
-
     setStatus('gen-status', 'Aanrijweg berekenen...', '');
     const approach = await getRoute(userCoord, entry, approachProfile);
     setStatus('gen-status', 'Terugweg berekenen...', '');
     const ret = await getRoute(exit, finalEnd, returnProfile);
-
     const allPts = [...approach, ...gpxPoints.slice(nearestIdx), ...gpxPoints.slice(0, nearestIdx), ...ret];
     const rawName = document.getElementById('outputname').value.trim();
     download(buildGPX(allPts), rawName ? rawName.replace(/\.gpx$/i,'') + '.gpx' : 'route_uitgebreid.gpx');
