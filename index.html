@@ -96,7 +96,7 @@
     </div>
     <div class="map-hint">
       <strong style="color:#4a9eff">Blauwe pin</strong> = jouw startpunt (klik/sleep of zoek adres) &nbsp;·&nbsp;
-      <strong style="color:#ffcc00">Gele pin</strong> = Instappunt op de route wijzigen.
+      <strong style="color:#ffcc00">Gele pin</strong> = instappunt op de route
     </div>
     <div class="map-container"><div id="map-start"></div></div>
   </div>
@@ -108,7 +108,12 @@
     <div class="hint">Google Maps → rechtsklik → klik de coördinaten → plak hier.</div>
   </div>
   <div class="status" id="coord-status"></div>
-  <div class="entry-info" id="entry-info" style="display:none">Instappunt: <span id="entry-coord-text"></span> — Instappunt op de route wijzigen.</div>
+  <div class="entry-info" id="entry-info" style="display:none">
+    Instappunt: <span id="entry-coord-text"></span>
+    <span id="reset-entry-wrap" style="display:none;margin-left:0.5rem">
+      &nbsp;·&nbsp;<a href="#" onclick="resetEntryPoint();return false;" style="color:var(--accent);font-size:0.78rem;text-decoration:none;">↺ Terug naar dichtstbijzijnste punt</a>
+    </span>
+  </div>
 
   <div class="divider"></div>
   <div class="route-type-label">Type aanrijweg</div>
@@ -162,8 +167,8 @@
   <div class="step-label">Overzicht</div>
   <div class="stats-grid">
     <div class="stat"><div class="stat-label">Originele route</div><div class="stat-val" id="s-orig">--</div><div class="stat-unit">km</div></div>
-    <div class="stat"><div class="stat-label">Aanrijweg (geschat)</div><div class="stat-val" id="s-extra">--</div><div class="stat-unit">km</div></div>
-    <div class="stat"><div class="stat-label">Totaal (geschat)</div><div class="stat-val" id="s-total">--</div><div class="stat-unit">km</div></div>
+    <div class="stat"><div class="stat-label">Aan+af rijweg</div><div class="stat-val" id="s-extra">--</div><div class="stat-unit">km</div></div>
+    <div class="stat"><div class="stat-label">Totaal </div><div class="stat-val" id="s-total">--</div><div class="stat-unit">km</div></div>
   </div>
 </div>
 
@@ -279,6 +284,16 @@ function updateEntryMarker() {
   }
   document.getElementById('entry-info').style.display = 'block';
   document.getElementById('entry-coord-text').textContent = ep.lat.toFixed(5) + ', ' + ep.lon.toFixed(5);
+  document.getElementById('reset-entry-wrap').style.display = manualEntry ? 'inline' : 'none';
+}
+
+function resetEntryPoint() {
+  manualEntry = false;
+  if (userCoord && gpxPoints.length) {
+    nearestIdx = findNearest(userCoord, gpxPoints);
+    updateEntryMarker();
+    updateStats();
+  }
 }
 
 function initEndMap() {
