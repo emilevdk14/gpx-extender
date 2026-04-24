@@ -180,10 +180,9 @@
 <div class="card" id="preview-card" style="display:none">
   <div class="step-label">Preview — Volledige Route</div>
   <div class="map-container"><div id="map-preview"></div></div>
-  <div style="display:flex;gap:1rem;margin-top:.6rem;font-size:.78rem;color:var(--text-dim)">
+  <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.6rem;font-size:.78rem;color:var(--text-dim)" id="preview-legend">
     <span><strong style="color:#4ade80">━</strong> Aanrijweg</span>
-    <span><strong style="color:#4a9eff">━</strong> Ronde</span>
-    <span><strong style="color:#ff8c00">━</strong> Verbinding</span>
+    <span><strong style="color:#ff8c00">━ ─</strong> Verbinding</span>
     <span><strong style="color:#ff6b35">━</strong> Terugweg</span>
   </div>
   <div class="status" id="preview-status"></div>
@@ -571,10 +570,31 @@ function refreshLegend() {
 function updateStats() {
   if (!gpxFiles.length) { document.getElementById('card-stats').style.display='none'; return; }
   document.getElementById('card-stats').style.display='block';
-  const orig = gpxFiles.reduce((s,f)=>s+totalDist(f.points),0)/1000;
-  const extra = userCoord ? hav(userCoord, gpxFiles[0].points[gpxFiles[0].entryIdx])*2/1000 : 0;
+
+  // Original: sum of all route segments (entry to exit per file)
+  const orig = gpxFiles.reduce((s,f) => {
+    const pts = buildFilePts(f);
+    return s + totalDist(pts);
+  }, 0) / 1000;
+
+  // Approach: start -> first entry
+  let extra = 0;
+  if (gpxFiles.length) extra += hav(userCoord, gpxFiles[0].points[gpxFiles[0].entryIdx]);
+
+  // Connections between files
+  for (let i=0; i<gpxFiles.length-1; i++) {
+    const exitPt = gpxFiles[i].points[gpxFiles[i].exitIdx];
+    const nextEntry = gpxFiles[i+1].points[gpxFiles[i+1].entryIdx];
+    extra += hav(exitPt, nextEntry);
+  }
+
+  // Return: last exit -> end
+  const same = document.getElementById('same-as-start') ? document.getElementById('same-as-start').checked : true;
+  const finalEnd = same ? userCoord : (endCoord || userCoord);
+  if (gpxFiles.length) extra += hav(gpxFiles[gpxFiles.length-1].points[gpxFiles[gpxFiles.length-1].exitIdx], finalEnd);
+
   document.getElementById('s-orig').textContent = orig.toFixed(1);
-  document.getElementById('s-total').textContent = (orig+extra).toFixed(1);
+  document.getElementById('s-total').textContent = (orig + extra/1000).toFixed(1);
 }
 
 function checkReady() {
@@ -683,7 +703,7 @@ async function buildPreview() {
 
     segments.forEach((seg,i) => {
       const ll = toLL(seg.pts);
-      if (ll.length > 1) { L.polyline(ll,{color:'#4a9eff',weight:3}).addTo(mapPreview); addArrows(mapPreview,ll,'#4a9eff'); allLL.push(...ll); }
+      if (ll.length > 1) { L.polyline(ll,{color:seg.color,weight:3.5}).addTo(mapPreview); addArrows(mapPreview,ll,seg.color); allLL.push(...ll); }
       if (connections[i]) { const cll=toLL(connections[i]); if (cll.length>1) { L.polyline(cll,{color:'#ff8c00',weight:2,dashArray:'6,4'}).addTo(mapPreview); allLL.push(...cll); } }
     });
 
@@ -694,6 +714,19 @@ async function buildPreview() {
     if (retLL.length) L.marker(retLL[retLL.length-1],{icon:pin('#a855f7')}).addTo(mapPreview).bindTooltip('Einde');
 
     if (allLL.length) mapPreview.fitBounds(L.latLngBounds(allLL),{padding:[20,20]});
+
+    // Update legend with file colors
+    const legendEl = document.getElementById('preview-legend');
+    if (legendEl) {
+      let legendHTML = '<span><strong style="color:#4ade80">━</strong> Aanrijweg</span>';
+      gpxFiles.forEach((f,i) => {
+        legendHTML += `<span><strong style="color:${f.color}">━</strong> Ronde ${i+1}: ${f.name}</span>`;
+      });
+      if (gpxFiles.length > 1) legendHTML += '<span><strong style="color:#ff8c00">━ ─</strong> Verbinding</span>';
+      legendHTML += '<span><strong style="color:#ff6b35">━</strong> Terugweg</span>';
+      legendEl.innerHTML = legendHTML;
+    }
+
     setStatus('preview-status','Klaar.','ok');
     document.getElementById('preview-card').scrollIntoView({behavior:'smooth',block:'start'});
   } catch(e) { setStatus('preview-status','Fout: '+e.message,'err'); }
