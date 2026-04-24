@@ -48,7 +48,7 @@
   .status { font-size: 0.8rem; margin-top: 0.5rem; min-height: 1.1rem; color: var(--text-muted); }
   .status.ok { color: var(--success); }
   .status.err { color: var(--danger); }
-  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-top: 0.75rem; }
+  .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-top: 0.75rem; }
   .stat { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.85rem 1rem; }
   .stat-label { font-size: 0.7rem; color: var(--text-dim); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; }
   .stat-val { font-size: 1.5rem; font-weight: 600; color: var(--accent); }
@@ -104,11 +104,19 @@
     <div class="tab" onclick="switchStartTab('coords')">Coördinaten</div>
   </div>
   <div id="start-map-panel">
-    <div class="mode-btns">
+    <div class="mode-btns" style="grid-template-columns:repeat(5,1fr)">
       <div class="mode-btn" id="btn-start" onclick="setMode('start')" style="border-color:#4a9eff;color:#4a9eff;background:#1e2a3a;">Startpunt</div>
       <div class="mode-btn" id="btn-entry" onclick="setMode('entry')" style="">Instappunt</div>
       <div class="mode-btn" id="btn-exit" onclick="setMode('exit')" style="">Uitstappunt</div>
       <div class="mode-btn" id="btn-waypoint" onclick="setMode('waypoint')" style="">Tussenpunt</div>
+      <div class="mode-btn" id="btn-endpoint" onclick="setMode('endpoint')" style="">Eindpunt</div>
+    </div>
+    <div id="endpoint-same-wrap" style="display:none;margin-bottom:0.75rem">
+      <label class="checkbox-row">
+        <input type="checkbox" id="same-as-start-2" checked onchange="toggleEndpointSame()">
+        Zelfde als startpunt
+      </label>
+      <div class="status" id="endcoord-status-2"></div>
     </div>
     <div class="map-hint" id="map-hint-text">
       <strong style="color:#4a9eff">●</strong> Startpunt &nbsp;
@@ -169,45 +177,8 @@
   </div>
 </div>
 
-<div class="card">
-  <div class="step-label">Stap 03 — Eindpunt</div>
-  <label class="checkbox-row">
-    <input type="checkbox" id="same-as-start" checked onchange="toggleEndpoint()">
-    Zelfde als startpunt
-  </label>
-  <div id="endpoint-fields" style="display:none">
-    <div class="tabs">
-      <div class="tab active" onclick="switchTab('end','map')">Kaart</div>
-      <div class="tab" onclick="switchTab('end','coords')">Coördinaten</div>
-    </div>
-    <div id="end-map-panel">
-      <div class="map-hint">Zoek een adres of klik op de kaart.</div>
-      <div class="map-container"><div id="map-end"></div></div>
-    </div>
-    <div id="end-coords-panel" style="display:none">
-      <div class="input-row">
-        <input type="text" id="endcoords" placeholder="51.05431, 3.71823  of plak een Google Maps link">
-        <button onclick="parseEndCoords()">Laden</button>
-      </div>
-      <div class="hint">Google Maps → rechtsklik → klik de coördinaten → plak hier.</div>
-    </div>
-    <div class="status" id="endcoord-status"></div>
-  </div>
-</div>
-
-<div class="card" id="card-stats" style="display:none">
-  <div class="step-label">Overzicht</div>
-  <div class="stats-grid">
-    <div class="stat"><div class="stat-label">Originele route</div><div class="stat-val" id="s-orig">--</div><div class="stat-unit">km</div></div>
-    <div class="stat"><div class="stat-label">Aanrijweg (geschat)</div><div class="stat-val" id="s-extra">--</div><div class="stat-unit">km</div></div>
-    <div class="stat"><div class="stat-label">Totaal (geschat)</div><div class="stat-val" id="s-total">--</div><div class="stat-unit">km</div></div>
-  </div>
-</div>
-
-<div class="card">
-  <div class="step-label">Stap 04 — Bestandsnaam</div>
-  <input type="text" id="outputname" placeholder="mijn-route" style="width:100%">
-  <div class="hint">Zonder .gpx extensie. Laat leeg voor standaardnaam.</div>
+<div style="width:100%;max-width:640px;margin-bottom:0.5rem">
+  <button class="primary" id="preview-btn" onclick="buildPreview()" disabled style="background:var(--surface2);border-color:var(--border);color:var(--text-muted);">Preview route</button>
 </div>
 
 <div class="card" id="preview-card" style="display:none">
@@ -222,8 +193,18 @@
   <div class="status" id="preview-status"></div>
 </div>
 
-<div style="width:100%;max-width:640px;margin-bottom:0.5rem">
-  <button class="primary" id="preview-btn" onclick="buildPreview()" disabled style="background:var(--surface2);border-color:var(--border);color:var(--text-muted);">Preview route</button>
+<div class="card" id="card-stats" style="display:none">
+  <div class="step-label">Overzicht</div>
+  <div class="stats-grid">
+    <div class="stat"><div class="stat-label">Originele route</div><div class="stat-val" id="s-orig">--</div><div class="stat-unit">km</div></div>
+    <div class="stat"><div class="stat-label">Nieuwe route (geschat)</div><div class="stat-val" id="s-total">--</div><div class="stat-unit">km</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="step-label">Stap 04 — Bestandsnaam</div>
+  <input type="text" id="outputname" placeholder="mijn-route" style="width:100%">
+  <div class="hint">Zonder .gpx extensie. Laat leeg voor standaardnaam.</div>
 </div>
 
 <div style="width:100%;max-width:640px;margin-bottom:1rem">
@@ -309,19 +290,27 @@ function handleMapAction(lat, lng) {
     updateStats();
   } else if (mapMode === 'waypoint') {
     addWaypoint(lat, lng);
+  } else if (mapMode === 'endpoint') {
+    const same = document.getElementById('same-as-start-2').checked;
+    if (!same) {
+      endCoord = { lat, lon: lng };
+      setStatus('endcoord-status-2', 'Eindpunt: ' + lat.toFixed(5) + ', ' + lng.toFixed(5), 'ok');
+      checkReady();
+    }
   }
 }
 
 function setMode(mode) {
   mapMode = mode;
-  const modes = ['start','entry','exit','waypoint'];
-  const colors = { start: '#4a9eff', entry: '#ffcc00', exit: '#ff8c00', waypoint: '#ff4444' };
-  const bgColors = { start: '#1e2a3a', entry: '#2a2000', exit: '#2a1500', waypoint: '#2a0000' };
+  const modes = ['start','entry','exit','waypoint','endpoint'];
+  const colors = { start: '#4a9eff', entry: '#ffcc00', exit: '#ff8c00', waypoint: '#ff4444', endpoint: '#a855f7' };
+  const bgColors = { start: '#1e2a3a', entry: '#2a2000', exit: '#2a1500', waypoint: '#2a0000', endpoint: '#1a0a2e' };
   const hints = {
     start: 'Klik op de kaart of sleep de blauwe pin om je startpunt te verplaatsen.',
     entry: 'Klik op de kaart of op de blauwe route om het instappunt te kiezen.',
     exit: 'Klik op de kaart of op de blauwe route om het uitstappunt te kiezen.',
-    waypoint: 'Klik op de kaart om een tussenpunt toe te voegen. Stel per punt in of het op de aanrijweg, afrijweg of beide ligt.'
+    waypoint: 'Klik op de kaart om een tussenpunt toe te voegen. Stel per punt in of het op de aanrijweg, afrijweg of beide ligt.',
+    endpoint: 'Klik op de kaart om je eindpunt te kiezen, of vink "Zelfde als startpunt" aan.'
   };
 
   modes.forEach(m => {
@@ -342,7 +331,9 @@ function setMode(mode) {
     '<strong style="color:#4a9eff">●</strong> Start &nbsp;' +
     '<strong style="color:#ffcc00">●</strong> Instap &nbsp;' +
     '<strong style="color:#ff8c00">●</strong> Uitstap &nbsp;' +
-    '<strong style="color:#ff4444">●</strong> Tussenpunt</span>';
+    '<strong style="color:#ff4444">●</strong> Tussenpunt &nbsp;' +
+    '<strong style="color:#a855f7">●</strong> Eindpunt</span>';
+  document.getElementById('endpoint-same-wrap').style.display = mode === 'endpoint' ? 'block' : 'none';
 }
 
 function drawGpxOnMap() {
@@ -448,6 +439,18 @@ function updateRouteMode() {
     desc.textContent = 'Rijdt enkel het stuk van instappunt tot uitstappunt.';
     lblFull.classList.remove('active'); lblPartial.classList.add('active');
   }
+}
+
+function toggleEndpointSame() {
+  const same = document.getElementById('same-as-start-2').checked;
+  if (same) {
+    endCoord = null;
+    setStatus('endcoord-status-2', 'Eindpunt = startpunt', 'ok');
+  } else {
+    endCoord = null;
+    setStatus('endcoord-status-2', 'Klik op de kaart om eindpunt te kiezen.', '');
+  }
+  checkReady();
 }
 
 function getLastApproachWaypoint() {
@@ -654,7 +657,6 @@ function extractCoord(raw) {
 }
 
 document.getElementById('coords').addEventListener('keydown', e => { if (e.key === 'Enter') parseCoords(); });
-document.getElementById('endcoords').addEventListener('keydown', e => { if (e.key === 'Enter') parseEndCoords(); });
 
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
@@ -693,12 +695,11 @@ function updateStats() {
   const dist = totalDist(gpxPoints);
   const toN = userCoord ? hav(userCoord, gpxPoints[nearestEntryIdx]) : null;
   document.getElementById('s-orig').textContent = (dist/1000).toFixed(1);
-  document.getElementById('s-extra').textContent = toN ? (toN*2/1000).toFixed(1) : '--';
   document.getElementById('s-total').textContent = toN ? ((dist+toN*2)/1000).toFixed(1) : '--';
 }
 
 function checkReady() {
-  const same = document.getElementById('same-as-start').checked;
+  const same = document.getElementById('same-as-start-2').checked;
   const ready = !!(gpxPoints.length && userCoord && (same || endCoord));
   document.getElementById('gen-btn').disabled = !ready;
   const pb = document.getElementById('preview-btn');
@@ -772,7 +773,7 @@ async function buildPreview() {
   setStatus('preview-status', 'Route berekenen...', '');
 
   try {
-    const same = document.getElementById('same-as-start').checked;
+    const same = document.getElementById('same-as-start-2').checked;
     const finalEnd = same ? userCoord : endCoord;
     const approachProfile = getProfile('approach-type');
     const returnProfile = getProfile('return-type-main');
@@ -831,7 +832,7 @@ async function generate() {
   const btn = document.getElementById('gen-btn');
   btn.disabled = true; btn.textContent = 'Bezig...';
   try {
-    const same = document.getElementById('same-as-start').checked;
+    const same = document.getElementById('same-as-start-2').checked;
     const finalEnd = same ? userCoord : endCoord;
     const approachProfile = getProfile('approach-type');
     const returnProfile = getProfile('return-type-main');
