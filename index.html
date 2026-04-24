@@ -294,6 +294,17 @@ function handleMapAction(lat, lng) {
     const same = document.getElementById('same-as-start-2').checked;
     if (!same) {
       endCoord = { lat, lon: lng };
+      if (!endMarker) {
+        endMarker = L.marker([lat, lng], { icon: pin('#a855f7', 14), draggable: true }).addTo(mapStart);
+        endMarker.on('dragend', e => {
+          const ll = e.target.getLatLng();
+          endCoord = { lat: ll.lat, lon: ll.lng };
+          setStatus('endcoord-status-2', 'Eindpunt: ' + ll.lat.toFixed(5) + ', ' + ll.lng.toFixed(5), 'ok');
+          checkReady();
+        });
+      } else {
+        endMarker.setLatLng([lat, lng]);
+      }
       setStatus('endcoord-status-2', 'Eindpunt: ' + lat.toFixed(5) + ', ' + lng.toFixed(5), 'ok');
       checkReady();
     }
@@ -326,13 +337,7 @@ function setMode(mode) {
     }
   });
 
-  document.getElementById('map-hint-text').innerHTML = hints[mode] +
-    '<br><span style="opacity:0.6;font-size:0.75rem">' +
-    '<strong style="color:#4a9eff">●</strong> Start &nbsp;' +
-    '<strong style="color:#ffcc00">●</strong> Instap &nbsp;' +
-    '<strong style="color:#ff8c00">●</strong> Uitstap &nbsp;' +
-    '<strong style="color:#ff4444">●</strong> Tussenpunt &nbsp;' +
-    '<strong style="color:#a855f7">●</strong> Eindpunt</span>';
+  document.getElementById('map-hint-text').innerHTML = hints[mode] + '<br>' + buildLegend();
   document.getElementById('endpoint-same-wrap').style.display = mode === 'endpoint' ? 'block' : 'none';
 }
 
@@ -407,6 +412,7 @@ function updateExitMarker() {
   document.getElementById('exit-coord-text').textContent = ep.lat.toFixed(5) + ', ' + ep.lon.toFixed(5);
   document.getElementById('reset-exit-wrap').style.display = manualExit ? 'inline' : 'none';
   document.getElementById('route-mode-wrap').style.display = manualExit ? 'block' : 'none';
+  refreshLegend();
 }
 
 function resetEntryPoint() {
@@ -445,12 +451,43 @@ function toggleEndpointSame() {
   const same = document.getElementById('same-as-start-2').checked;
   if (same) {
     endCoord = null;
+    if (endMarker) { mapStart.removeLayer(endMarker); endMarker = null; }
     setStatus('endcoord-status-2', 'Eindpunt = startpunt', 'ok');
   } else {
     endCoord = null;
     setStatus('endcoord-status-2', 'Klik op de kaart om eindpunt te kiezen.', '');
   }
-  checkReady();
+  checkReady(); refreshLegend();
+}
+
+function buildLegend() {
+  const sameEnd = document.getElementById('same-as-start-2') ? document.getElementById('same-as-start-2').checked : true;
+  const sameExit = !manualExit;
+  let parts = [];
+  if (sameEnd) {
+    parts.push('<strong style="color:#4a9eff">●</strong> Start/Einde');
+  } else {
+    parts.push('<strong style="color:#4a9eff">●</strong> Start');
+    parts.push('<strong style="color:#a855f7">●</strong> Eindpunt');
+  }
+  if (sameExit) {
+    parts.push('<strong style="color:#ffcc00">●</strong> In/Uitstap');
+  } else {
+    parts.push('<strong style="color:#ffcc00">●</strong> Instap');
+    parts.push('<strong style="color:#ff8c00">●</strong> Uitstap');
+  }
+  if (waypoints.length) parts.push('<strong style="color:#ff4444">●</strong> Tussenpunt');
+  return '<span style="opacity:0.6;font-size:0.75rem">' + parts.join(' &nbsp;') + '</span>';
+}
+
+function refreshLegend() {
+  const hint = document.getElementById('map-hint-text');
+  if (!hint) return;
+  const text = hint.innerHTML;
+  const brIdx = text.lastIndexOf('<br>');
+  if (brIdx !== -1) {
+    hint.innerHTML = text.substring(0, brIdx) + '<br>' + buildLegend();
+  }
 }
 
 function getLastApproachWaypoint() {
@@ -478,7 +515,7 @@ function addWaypoint(lat, lon) {
     const ref = getLastApproachWaypoint();
     if (ref) { nearestEntryIdx = findNearest(ref, gpxPoints); updateEntryMarker(); autoSetExit(); }
   }
-  updateStats();
+  updateStats(); refreshLegend();
 }
 
 function removeWaypoint(id) {
@@ -492,7 +529,7 @@ function removeWaypoint(id) {
     nearestEntryIdx = findNearest(ref || userCoord, gpxPoints);
     updateEntryMarker(); autoSetExit();
   }
-  updateStats();
+  updateStats(); refreshLegend();
 }
 
 function setWpType(id, type) {
