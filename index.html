@@ -140,6 +140,16 @@
     </span>
   </div>
 
+  <div id="route-mode-wrap" style="display:none;margin-top:0.75rem">
+    <div class="divider"></div>
+    <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:0.5rem;font-weight:500;">RIJMODUS</div>
+    <div class="route-type-row">
+      <label class="route-type-option active" id="lbl-full"><input type="radio" name="route-mode" value="full" checked onchange="updateRouteMode()"> Volledige ronde</label>
+      <label class="route-type-option" id="lbl-partial"><input type="radio" name="route-mode" value="partial" onchange="updateRouteMode()"> Gedeeltelijk (instap → uitstap)</label>
+    </div>
+    <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.5rem" id="route-mode-desc">Rijdt de volledige GPX-lus en stapt uit op het gekozen uitstappunt.</div>
+  </div>
+
   <div id="waypoint-list-wrap" style="display:none">
     <div class="divider"></div>
     <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:0.5rem;font-weight:500;">TUSSENPUNTEN — kies per punt: Aanrijweg / Afrijweg / Beide</div>
@@ -234,8 +244,9 @@ let startMarker = null, entryMarker = null, exitMarker = null;
 let endMarker = null, mapStart = null, mapEnd = null;
 let gpxPolyline = null;
 let mapPreview = null;
-let waypoints = [];
+let waypoints = []; // {lat, lon, type: 'approach'|'return'|'both', marker}
 let wpCounter = 0;
+let routeMode = 'full';
 
 const DEFAULT = { lat: 51.03150413693969, lon: 3.9048141052141334 };
 
@@ -312,13 +323,26 @@ function setMode(mode) {
     exit: 'Klik op de kaart of op de blauwe route om het uitstappunt te kiezen.',
     waypoint: 'Klik op de kaart om een tussenpunt toe te voegen. Stel per punt in of het op de aanrijweg, afrijweg of beide ligt.'
   };
+
   modes.forEach(m => {
     const btn = document.getElementById('btn-' + m);
-    if (m === mode) { btn.style.borderColor = colors[m]; btn.style.color = colors[m]; btn.style.background = bgColors[m]; }
-    else { btn.style.borderColor = 'var(--border)'; btn.style.color = 'var(--text-muted)'; btn.style.background = 'var(--surface2)'; }
+    if (m === mode) {
+      btn.style.borderColor = colors[m];
+      btn.style.color = colors[m];
+      btn.style.background = bgColors[m];
+    } else {
+      btn.style.borderColor = 'var(--border)';
+      btn.style.color = 'var(--text-muted)';
+      btn.style.background = 'var(--surface2)';
+    }
   });
+
   document.getElementById('map-hint-text').innerHTML = hints[mode] +
-    '<br><span style="opacity:0.6;font-size:0.75rem"><strong style="color:#4a9eff">●</strong> Start &nbsp;<strong style="color:#ffcc00">●</strong> Instap &nbsp;<strong style="color:#ff8c00">●</strong> Uitstap &nbsp;<strong style="color:#ff4444">●</strong> Tussenpunt</span>';
+    '<br><span style="opacity:0.6;font-size:0.75rem">' +
+    '<strong style="color:#4a9eff">●</strong> Start &nbsp;' +
+    '<strong style="color:#ffcc00">●</strong> Instap &nbsp;' +
+    '<strong style="color:#ff8c00">●</strong> Uitstap &nbsp;' +
+    '<strong style="color:#ff4444">●</strong> Tussenpunt</span>';
 }
 
 function drawGpxOnMap() {
@@ -327,6 +351,7 @@ function drawGpxOnMap() {
   const latlngs = gpxPoints.map(p => [p.lat, p.lon]);
   gpxPolyline = L.polyline(latlngs, { color: '#4a9eff', weight: 3, opacity: 0.8 }).addTo(mapStart);
 
+  // Add direction arrows
   if (window.gpxArrows) window.gpxArrows.forEach(a => mapStart.removeLayer(a));
   window.gpxArrows = [];
   const arrowInterval = Math.max(1, Math.floor(latlngs.length / 20));
@@ -341,15 +366,24 @@ function drawGpxOnMap() {
     const mid = [(p1[0]+p2[0])/2, (p1[1]+p2[1])/2];
     window.gpxArrows.push(L.marker(mid, { icon: arrowIcon, interactive: false }).addTo(mapStart));
   }
-
   const bounds = gpxPolyline.getBounds();
   if (userCoord) bounds.extend([userCoord.lat, userCoord.lon]);
   mapStart.fitBounds(bounds, { padding: [20, 20] });
   gpxPolyline.on('click', e => {
     L.DomEvent.stopPropagation(e);
     const clicked = { lat: e.latlng.lat, lon: e.latlng.lng };
-    if (mapMode === 'exit') { nearestExitIdx = findNearest(clicked, gpxPoints); manualExit = true; updateExitMarker(); updateStats(); }
-    else { nearestEntryIdx = findNearest(clicked, gpxPoints); manualEntry = true; updateEntryMarker(); autoSetExit(); updateStats(); }
+    if (mapMode === 'exit') {
+      nearestExitIdx = findNearest(clicked, gpxPoints);
+      manualExit = true;
+      updateExitMarker();
+      updateStats();
+    } else {
+      nearestEntryIdx = findNearest(clicked, gpxPoints);
+      manualEntry = true;
+      updateEntryMarker();
+      autoSetExit();
+      updateStats();
+    }
   });
   updateEntryMarker();
   autoSetExit();
@@ -364,8 +398,9 @@ function autoSetExit() {
 function updateEntryMarker() {
   if (!mapStart || !gpxPoints.length) return;
   const ep = gpxPoints[nearestEntryIdx];
-  if (!entryMarker) { entryMarker = L.marker([ep.lat, ep.lon], { icon: pin('#ffcc00', 14) }).addTo(mapStart); }
-  else entryMarker.setLatLng([ep.lat, ep.lon]);
+  if (!entryMarker) {
+    entryMarker = L.marker([ep.lat, ep.lon], { icon: pin('#ffcc00', 14) }).addTo(mapStart);
+  } else entryMarker.setLatLng([ep.lat, ep.lon]);
   document.getElementById('entry-info').style.display = 'block';
   document.getElementById('entry-coord-text').textContent = ep.lat.toFixed(5) + ', ' + ep.lon.toFixed(5);
   document.getElementById('reset-entry-wrap').style.display = manualEntry ? 'inline' : 'none';
@@ -374,19 +409,46 @@ function updateEntryMarker() {
 function updateExitMarker() {
   if (!mapStart || !gpxPoints.length) return;
   const ep = gpxPoints[nearestExitIdx];
-  if (!exitMarker) { exitMarker = L.marker([ep.lat, ep.lon], { icon: pin('#ff8c00', 14) }).addTo(mapStart); }
-  else exitMarker.setLatLng([ep.lat, ep.lon]);
+  if (!exitMarker) {
+    exitMarker = L.marker([ep.lat, ep.lon], { icon: pin('#ff8c00', 14) }).addTo(mapStart);
+  } else exitMarker.setLatLng([ep.lat, ep.lon]);
   document.getElementById('exit-info').style.display = 'block';
   document.getElementById('exit-coord-text').textContent = ep.lat.toFixed(5) + ', ' + ep.lon.toFixed(5);
   document.getElementById('reset-exit-wrap').style.display = manualExit ? 'inline' : 'none';
+  document.getElementById('route-mode-wrap').style.display = manualExit ? 'block' : 'none';
 }
 
 function resetEntryPoint() {
   manualEntry = false;
-  if (userCoord && gpxPoints.length) { const ref = getLastApproachWaypoint(); nearestEntryIdx = findNearest(ref || userCoord, gpxPoints); updateEntryMarker(); autoSetExit(); updateStats(); }
+  if (userCoord && gpxPoints.length) {
+    const ref = getLastApproachWaypoint();
+    nearestEntryIdx = findNearest(ref || userCoord, gpxPoints);
+    updateEntryMarker();
+    autoSetExit();
+    updateStats();
+  }
 }
 
-function resetExitPoint() { manualExit = false; autoSetExit(); updateStats(); }
+function resetExitPoint() {
+  manualExit = false;
+  autoSetExit();
+  updateStats();
+}
+
+function updateRouteMode() {
+  const el = document.querySelector('input[name="route-mode"]:checked');
+  routeMode = el ? el.value : 'full';
+  const desc = document.getElementById('route-mode-desc');
+  const lblFull = document.getElementById('lbl-full');
+  const lblPartial = document.getElementById('lbl-partial');
+  if (routeMode === 'full') {
+    desc.textContent = 'Rijdt de volledige GPX-lus en stapt uit op het gekozen uitstappunt.';
+    lblFull.classList.add('active'); lblPartial.classList.remove('active');
+  } else {
+    desc.textContent = 'Rijdt enkel het stuk van instappunt tot uitstappunt.';
+    lblFull.classList.remove('active'); lblPartial.classList.add('active');
+  }
+}
 
 function getLastApproachWaypoint() {
   const approachWps = waypoints.filter(w => w.type === 'approach' || w.type === 'both');
@@ -399,14 +461,20 @@ function addWaypoint(lat, lon) {
   const marker = L.marker([lat, lon], { icon: wpPin('#ff4444', id), draggable: true }).addTo(mapStart);
   const wp = { id, lat, lon, type: 'approach', marker };
   marker.on('dragend', e => {
-    const ll = e.target.getLatLng(); wp.lat = ll.lat; wp.lon = ll.lng;
+    const ll = e.target.getLatLng();
+    wp.lat = ll.lat; wp.lon = ll.lng;
     updateWpList();
-    if ((wp.type === 'approach' || wp.type === 'both') && !manualEntry) { nearestEntryIdx = findNearest(getLastApproachWaypoint() || userCoord, gpxPoints); updateEntryMarker(); autoSetExit(); }
+    if (wp.type === 'approach' || wp.type === 'both') {
+      if (!manualEntry) { nearestEntryIdx = findNearest(getLastApproachWaypoint() || userCoord, gpxPoints); updateEntryMarker(); autoSetExit(); }
+    }
     updateStats();
   });
   waypoints.push(wp);
   updateWpList();
-  if (!manualEntry) { const ref = getLastApproachWaypoint(); if (ref) { nearestEntryIdx = findNearest(ref, gpxPoints); updateEntryMarker(); autoSetExit(); } }
+  if (!manualEntry) {
+    const ref = getLastApproachWaypoint();
+    if (ref) { nearestEntryIdx = findNearest(ref, gpxPoints); updateEntryMarker(); autoSetExit(); }
+  }
   updateStats();
 }
 
@@ -416,7 +484,11 @@ function removeWaypoint(id) {
   mapStart.removeLayer(waypoints[idx].marker);
   waypoints.splice(idx, 1);
   updateWpList();
-  if (!manualEntry) { const ref = getLastApproachWaypoint(); nearestEntryIdx = findNearest(ref || userCoord, gpxPoints); updateEntryMarker(); autoSetExit(); }
+  if (!manualEntry) {
+    const ref = getLastApproachWaypoint();
+    nearestEntryIdx = findNearest(ref || userCoord, gpxPoints);
+    updateEntryMarker(); autoSetExit();
+  }
   updateStats();
 }
 
@@ -425,7 +497,11 @@ function setWpType(id, type) {
   if (!wp) return;
   wp.type = type;
   updateWpList();
-  if (!manualEntry) { const ref = getLastApproachWaypoint(); nearestEntryIdx = findNearest(ref || userCoord, gpxPoints); updateEntryMarker(); autoSetExit(); }
+  if (!manualEntry) {
+    const ref = getLastApproachWaypoint();
+    nearestEntryIdx = findNearest(ref || userCoord, gpxPoints);
+    updateEntryMarker(); autoSetExit();
+  }
   updateStats();
 }
 
@@ -437,10 +513,22 @@ function updateWpList() {
   waypoints.forEach((wp, i) => {
     const el = document.createElement('div');
     el.className = 'waypoint-item';
-    el.innerHTML = `<div class="waypoint-dot"></div><div class="waypoint-coord">${i+1}. ${wp.lat.toFixed(5)}, ${wp.lon.toFixed(5)}</div><div class="waypoint-type"><div class="wtype-btn ${wp.type==='approach'?'active-approach':''}" onclick="setWpType(${wp.id},'approach')">Aanrijweg</div><div class="wtype-btn ${wp.type==='return'?'active-return':''}" onclick="setWpType(${wp.id},'return')">Afrijweg</div><div class="wtype-btn ${wp.type==='both'?'active-both':''}" onclick="setWpType(${wp.id},'both')">Beide</div></div><div class="waypoint-del" onclick="removeWaypoint(${wp.id})">✕</div>`;
+    el.innerHTML = `
+      <div class="waypoint-dot"></div>
+      <div class="waypoint-coord">${i+1}. ${wp.lat.toFixed(5)}, ${wp.lon.toFixed(5)}</div>
+      <div class="waypoint-type">
+        <div class="wtype-btn ${wp.type==='approach'?'active-approach':''}" onclick="setWpType(${wp.id},'approach')">Aanrijweg</div>
+        <div class="wtype-btn ${wp.type==='return'?'active-return':''}" onclick="setWpType(${wp.id},'return')">Afrijweg</div>
+        <div class="wtype-btn ${wp.type==='both'?'active-both':''}" onclick="setWpType(${wp.id},'both')">Beide</div>
+      </div>
+      <div class="waypoint-del" onclick="removeWaypoint(${wp.id})">✕</div>
+    `;
     list.appendChild(el);
   });
-  waypoints.forEach((wp, i) => { wp.marker.setIcon(wpPin('#ff4444', i+1)); });
+  // renumber markers
+  waypoints.forEach((wp, i) => {
+    wp.marker.setIcon(wpPin('#ff4444', i+1));
+  });
 }
 
 function initEndMap() {
@@ -448,15 +536,22 @@ function initEndMap() {
   const c = userCoord || DEFAULT;
   mapEnd = L.map('map-end').setView([c.lat, c.lon], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapEnd);
-  L.Control.geocoder({ defaultMarkGeocode: false, placeholder: 'Zoek adres...', geocoder: L.Control.Geocoder.nominatim({ geocodingQueryParams: { countrycodes: 'be,nl' } }) }).on('markgeocode', e => {
+  L.Control.geocoder({
+    defaultMarkGeocode: false, placeholder: 'Zoek adres...',
+    geocoder: L.Control.Geocoder.nominatim({ geocodingQueryParams: { countrycodes: 'be,nl' } })
+  }).on('markgeocode', e => {
     const { lat, lng } = e.geocode.center;
-    if (!endMarker) { endMarker = L.marker([lat, lng], { icon: pin('#ff6b35'), draggable: true }).addTo(mapEnd); endMarker.on('dragend', e => { const ll = e.target.getLatLng(); setEndCoord(ll.lat, ll.lng); }); }
-    else endMarker.setLatLng([lat, lng]);
+    if (!endMarker) {
+      endMarker = L.marker([lat, lng], { icon: pin('#ff6b35'), draggable: true }).addTo(mapEnd);
+      endMarker.on('dragend', e => { const ll = e.target.getLatLng(); setEndCoord(ll.lat, ll.lng); });
+    } else endMarker.setLatLng([lat, lng]);
     mapEnd.setView([lat, lng], 15); setEndCoord(lat, lng);
   }).addTo(mapEnd);
   mapEnd.on('click', e => {
-    if (!endMarker) { endMarker = L.marker(e.latlng, { icon: pin('#ff6b35'), draggable: true }).addTo(mapEnd); endMarker.on('dragend', e => { const ll = e.target.getLatLng(); setEndCoord(ll.lat, ll.lng); }); }
-    else endMarker.setLatLng(e.latlng);
+    if (!endMarker) {
+      endMarker = L.marker(e.latlng, { icon: pin('#ff6b35'), draggable: true }).addTo(mapEnd);
+      endMarker.on('dragend', e => { const ll = e.target.getLatLng(); setEndCoord(ll.lat, ll.lng); });
+    } else endMarker.setLatLng(e.latlng);
     setEndCoord(e.latlng.lat, e.latlng.lng);
   });
 }
@@ -464,24 +559,47 @@ function initEndMap() {
 function setStartCoord(lat, lon) {
   userCoord = { lat, lon };
   setStatus('coord-status', 'Startpunt: ' + lat.toFixed(5) + ', ' + lon.toFixed(5), 'ok');
-  if (gpxPoints.length && !manualEntry) { const ref = getLastApproachWaypoint(); nearestEntryIdx = findNearest(ref || userCoord, gpxPoints); updateEntryMarker(); autoSetExit(); }
+  if (gpxPoints.length && !manualEntry) {
+    const ref = getLastApproachWaypoint();
+    nearestEntryIdx = findNearest(ref || userCoord, gpxPoints);
+    updateEntryMarker(); autoSetExit();
+  }
   updateStats(); checkReady();
 }
 
-function setEndCoord(lat, lon) { endCoord = { lat, lon }; setStatus('endcoord-status', 'Eindpunt: ' + lat.toFixed(5) + ', ' + lon.toFixed(5), 'ok'); checkReady(); }
+function setEndCoord(lat, lon) {
+  endCoord = { lat, lon };
+  setStatus('endcoord-status', 'Eindpunt: ' + lat.toFixed(5) + ', ' + lon.toFixed(5), 'ok');
+  checkReady();
+}
 
 function switchStartTab(mode) {
-  const mp = document.getElementById('start-map-panel'), cp = document.getElementById('start-coords-panel');
+  const mp = document.getElementById('start-map-panel');
+  const cp = document.getElementById('start-coords-panel');
   const tabs = document.querySelector('.card:nth-child(3)').querySelectorAll('.tab');
-  if (mode === 'map') { mp.style.display = 'block'; cp.style.display = 'none'; tabs[0].classList.add('active'); tabs[1].classList.remove('active'); setTimeout(() => mapStart && mapStart.invalidateSize(), 50); }
-  else { mp.style.display = 'none'; cp.style.display = 'block'; tabs[0].classList.remove('active'); tabs[1].classList.add('active'); }
+  if (mode === 'map') {
+    mp.style.display = 'block'; cp.style.display = 'none';
+    tabs[0].classList.add('active'); tabs[1].classList.remove('active');
+    setTimeout(() => mapStart && mapStart.invalidateSize(), 50);
+  } else {
+    mp.style.display = 'none'; cp.style.display = 'block';
+    tabs[0].classList.remove('active'); tabs[1].classList.add('active');
+  }
 }
 
 function switchTab(which, mode) {
-  const mp = document.getElementById(which + '-map-panel'), cp = document.getElementById(which + '-coords-panel');
-  const tabs = document.getElementById('endpoint-fields').querySelectorAll('.tab');
-  if (mode === 'map') { mp.style.display = 'block'; cp.style.display = 'none'; tabs[0].classList.add('active'); tabs[1].classList.remove('active'); setTimeout(() => mapEnd && mapEnd.invalidateSize(), 50); }
-  else { mp.style.display = 'none'; cp.style.display = 'block'; tabs[0].classList.remove('active'); tabs[1].classList.add('active'); }
+  const mp = document.getElementById(which + '-map-panel');
+  const cp = document.getElementById(which + '-coords-panel');
+  const container = document.getElementById('endpoint-fields');
+  const tabs = container.querySelectorAll('.tab');
+  if (mode === 'map') {
+    mp.style.display = 'block'; cp.style.display = 'none';
+    tabs[0].classList.add('active'); tabs[1].classList.remove('active');
+    setTimeout(() => mapEnd && mapEnd.invalidateSize(), 50);
+  } else {
+    mp.style.display = 'none'; cp.style.display = 'block';
+    tabs[0].classList.remove('active'); tabs[1].classList.add('active');
+  }
 }
 
 function toggleEndpoint() {
@@ -495,9 +613,15 @@ function toggleEndpoint() {
 function parseCoords() {
   const coord = extractCoord(document.getElementById('coords').value.trim());
   if (coord) {
-    userCoord = coord; startMarker && startMarker.setLatLng([coord.lat, coord.lon]); mapStart && mapStart.setView([coord.lat, coord.lon], 13);
+    userCoord = coord;
+    startMarker && startMarker.setLatLng([coord.lat, coord.lon]);
+    mapStart && mapStart.setView([coord.lat, coord.lon], 13);
     setStatus('coord-status', 'Startpunt: ' + coord.lat.toFixed(5) + ', ' + coord.lon.toFixed(5), 'ok');
-    if (gpxPoints.length && !manualEntry) { const ref = getLastApproachWaypoint(); nearestEntryIdx = findNearest(ref || userCoord, gpxPoints); updateEntryMarker(); autoSetExit(); }
+    if (gpxPoints.length && !manualEntry) {
+      const ref = getLastApproachWaypoint();
+      nearestEntryIdx = findNearest(ref || userCoord, gpxPoints);
+      updateEntryMarker(); autoSetExit();
+    }
     updateStats(); checkReady();
   } else { userCoord = null; setStatus('coord-status', 'Geen coördinaten herkend.', 'err'); }
 }
@@ -506,8 +630,15 @@ function parseEndCoords() {
   const coord = extractCoord(document.getElementById('endcoords').value.trim());
   if (coord) {
     endCoord = coord;
-    if (mapEnd) { if (!endMarker) { endMarker = L.marker([coord.lat, coord.lon], { icon: pin('#ff6b35'), draggable: true }).addTo(mapEnd); endMarker.on('dragend', e => { const ll = e.target.getLatLng(); setEndCoord(ll.lat, ll.lng); }); } else endMarker.setLatLng([coord.lat, coord.lon]); mapEnd.setView([coord.lat, coord.lon], 13); }
-    setStatus('endcoord-status', 'Eindpunt: ' + coord.lat.toFixed(5) + ', ' + coord.lon.toFixed(5), 'ok'); checkReady();
+    if (mapEnd) {
+      if (!endMarker) {
+        endMarker = L.marker([coord.lat, coord.lon], { icon: pin('#ff6b35'), draggable: true }).addTo(mapEnd);
+        endMarker.on('dragend', e => { const ll = e.target.getLatLng(); setEndCoord(ll.lat, ll.lng); });
+      } else endMarker.setLatLng([coord.lat, coord.lon]);
+      mapEnd.setView([coord.lat, coord.lon], 13);
+    }
+    setStatus('endcoord-status', 'Eindpunt: ' + coord.lat.toFixed(5) + ', ' + coord.lon.toFixed(5), 'ok');
+    checkReady();
   } else { endCoord = null; setStatus('endcoord-status', 'Geen coördinaten herkend.', 'err'); }
 }
 
@@ -525,7 +656,8 @@ function extractCoord(raw) {
 document.getElementById('coords').addEventListener('keydown', e => { if (e.key === 'Enter') parseCoords(); });
 document.getElementById('endcoords').addEventListener('keydown', e => { if (e.key === 'Enter') parseEndCoords(); });
 
-const dropzone = document.getElementById('dropzone'), fileInput = document.getElementById('fileInput');
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
 dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('over'); });
 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
 dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('over'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
@@ -544,7 +676,8 @@ function handleFile(f) {
       manualEntry = false; manualExit = false;
       if (userCoord) nearestEntryIdx = findNearest(userCoord, gpxPoints);
       setStatus('gpx-status', gpxPoints.length + ' trackpunten geladen.', 'ok');
-      drawGpxOnMap(); updateStats(); checkReady();
+      drawGpxOnMap();
+      updateStats(); checkReady();
     } catch { setStatus('gpx-status', 'Kon bestand niet verwerken.', 'err'); }
   };
   reader.readAsText(f);
@@ -574,7 +707,10 @@ function checkReady() {
   else { pb.style.background='var(--surface2)'; pb.style.borderColor='var(--border)'; pb.style.color='var(--text-muted)'; }
 }
 
-function getProfile(name) { const el = document.querySelector(`input[name="${name}"]:checked`); return el ? el.value : 'cycling-regular'; }
+function getProfile(name) {
+  const el = document.querySelector(`input[name="${name}"]:checked`);
+  return el ? el.value : 'cycling-regular';
+}
 
 async function getRoute(from, to, profile) {
   const res = await fetch('/api/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coordinates: [[from.lon, from.lat], [to.lon, to.lat]], profile }) });
@@ -593,50 +729,102 @@ async function routeThrough(points, profile) {
   return result;
 }
 
+function buildRoutePts(entryIdx, exitIdx) {
+  if (routeMode === 'partial') {
+    // Just entry to exit following GPX direction
+    if (entryIdx <= exitIdx) return gpxPoints.slice(entryIdx, exitIdx + 1);
+    return [...gpxPoints.slice(entryIdx), ...gpxPoints.slice(0, exitIdx + 1)];
+  }
+  // Full loop: entry → full loop → exit
+  // Always follows GPX direction (forward from entry, wrapping around)
+  if (entryIdx === exitIdx) {
+    // Full loop back to same point
+    return [...gpxPoints.slice(entryIdx), ...gpxPoints.slice(0, entryIdx + 1)];
+  }
+  if (entryIdx < exitIdx) {
+    // Goes forward: entry...exit, then wraps: exit...end...start...entry, then entry...exit
+    return [...gpxPoints.slice(entryIdx), ...gpxPoints.slice(0, exitIdx + 1)];
+  }
+  // entryIdx > exitIdx: entry...end, start...exit
+  return [...gpxPoints.slice(entryIdx), ...gpxPoints.slice(0, exitIdx + 1)];
+}
+
 function addArrowsToLayer(map, latlngs, color) {
+  const arrows = [];
   const interval = Math.max(1, Math.floor(latlngs.length / 15));
   for (let i = interval; i < latlngs.length - 1; i += interval) {
     const p1 = latlngs[i], p2 = latlngs[i+1];
     const angle = Math.atan2(p2[1]-p1[1], p2[0]-p1[0]) * 180 / Math.PI;
-    const icon = L.divIcon({ className: '', html: `<div style="transform:rotate(${angle-90}deg);font-size:11px;color:${color};line-height:1;text-shadow:0 0 3px #0a0f1e">▲</div>`, iconSize: [11,11], iconAnchor: [5.5,5.5] });
-    L.marker([(p1[0]+p2[0])/2, (p1[1]+p2[1])/2], { icon, interactive: false }).addTo(map);
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="transform:rotate(${angle-90}deg);font-size:11px;color:${color};line-height:1;text-shadow:0 0 3px #0a0f1e">▲</div>`,
+      iconSize: [11,11], iconAnchor: [5.5,5.5]
+    });
+    const mid = [(p1[0]+p2[0])/2, (p1[1]+p2[1])/2];
+    arrows.push(L.marker(mid, { icon, interactive: false }).addTo(map));
   }
+  return arrows;
 }
 
 async function buildPreview() {
   const btn = document.getElementById('preview-btn');
   btn.textContent = 'Bezig...'; btn.disabled = true;
   setStatus('preview-status', 'Route berekenen...', '');
+
   try {
     const same = document.getElementById('same-as-start').checked;
     const finalEnd = same ? userCoord : endCoord;
-    const approachProfile = getProfile('approach-type'), returnProfile = getProfile('return-type-main');
-    const entryPt = gpxPoints[nearestEntryIdx], exitPt = gpxPoints[nearestExitIdx];
+    const approachProfile = getProfile('approach-type');
+    const returnProfile = getProfile('return-type-main');
+    const entryPt = gpxPoints[nearestEntryIdx];
+    const exitPt = gpxPoints[nearestExitIdx];
     const approachWps = waypoints.filter(w => w.type === 'approach' || w.type === 'both');
     const returnWps = waypoints.filter(w => w.type === 'return' || w.type === 'both');
-    const approachPts = await routeThrough([userCoord, ...approachWps, entryPt], approachProfile);
-    const returnPts = await routeThrough([exitPt, ...returnWps, finalEnd], returnProfile);
-    let routePts = nearestEntryIdx <= nearestExitIdx ? gpxPoints.slice(nearestEntryIdx, nearestExitIdx + 1) : [...gpxPoints.slice(nearestEntryIdx), ...gpxPoints.slice(0, nearestExitIdx + 1)];
+    const approachChain = [userCoord, ...approachWps, entryPt];
+    const returnChain = [exitPt, ...returnWps, finalEnd];
+
+    const approachPts = await routeThrough(approachChain, approachProfile);
+    const returnPts = await routeThrough(returnChain, returnProfile);
+
+    const routePts = buildRoutePts(nearestEntryIdx, nearestExitIdx);
 
     document.getElementById('preview-card').style.display = 'block';
-    if (!mapPreview) { mapPreview = L.map('map-preview'); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapPreview); }
-    else { mapPreview.eachLayer(l => { if (!(l instanceof L.TileLayer)) mapPreview.removeLayer(l); }); }
+
+    if (!mapPreview) {
+      mapPreview = L.map('map-preview');
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapPreview);
+    } else {
+      mapPreview.eachLayer(l => { if (!(l instanceof L.TileLayer)) mapPreview.removeLayer(l); });
+    }
 
     const toLL = pts => pts.map(p => [p.lat, p.lon]);
-    const aLL = toLL(approachPts), rLL = toLL(routePts), retLL = toLL(returnPts);
-    L.polyline(aLL, { color: '#4ade80', weight: 3 }).addTo(mapPreview);
-    L.polyline(rLL, { color: '#4a9eff', weight: 3 }).addTo(mapPreview);
-    L.polyline(retLL, { color: '#ff8c00', weight: 3 }).addTo(mapPreview);
-    addArrowsToLayer(mapPreview, aLL, '#4ade80');
-    addArrowsToLayer(mapPreview, rLL, '#4a9eff');
-    addArrowsToLayer(mapPreview, retLL, '#ff8c00');
-    L.marker(aLL[0], { icon: pin('#4a9eff') }).addTo(mapPreview).bindTooltip('Start');
-    L.marker(retLL[retLL.length-1], { icon: pin('#ff6b35') }).addTo(mapPreview).bindTooltip('Eind');
-    mapPreview.fitBounds(L.latLngBounds([...aLL, ...rLL, ...retLL]), { padding: [20, 20] });
+
+    const approachLL = toLL(approachPts);
+    const routeLL = toLL(routePts);
+    const returnLL = toLL(returnPts);
+
+    const aLine = L.polyline(approachLL, { color: '#4ade80', weight: 3 }).addTo(mapPreview);
+    const rLine = L.polyline(routeLL, { color: '#4a9eff', weight: 3 }).addTo(mapPreview);
+    const retLine = L.polyline(returnLL, { color: '#ff8c00', weight: 3 }).addTo(mapPreview);
+
+    addArrowsToLayer(mapPreview, approachLL, '#4ade80');
+    addArrowsToLayer(mapPreview, routeLL, '#4a9eff');
+    addArrowsToLayer(mapPreview, returnLL, '#ff8c00');
+
+    // Start/end markers
+    L.marker(approachLL[0], { icon: pin('#4a9eff') }).addTo(mapPreview).bindTooltip('Start', {permanent:false});
+    L.marker(returnLL[returnLL.length-1], { icon: pin('#ff6b35') }).addTo(mapPreview).bindTooltip('Eind', {permanent:false});
+
+    const allLL = [...approachLL, ...routeLL, ...returnLL];
+    const bounds = L.latLngBounds(allLL);
+    mapPreview.fitBounds(bounds, { padding: [20, 20] });
+
     setStatus('preview-status', 'Klaar.', 'ok');
     document.getElementById('preview-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch(e) { setStatus('preview-status', 'Fout: ' + e.message, 'err'); }
-  btn.textContent = 'Preview route'; btn.disabled = false; checkReady();
+
+  btn.textContent = 'Preview route'; btn.disabled = false;
+  checkReady();
 }
 
 async function generate() {
@@ -645,17 +833,29 @@ async function generate() {
   try {
     const same = document.getElementById('same-as-start').checked;
     const finalEnd = same ? userCoord : endCoord;
-    const approachProfile = getProfile('approach-type'), returnProfile = getProfile('return-type-main');
-    const entryPt = gpxPoints[nearestEntryIdx], exitPt = gpxPoints[nearestExitIdx];
+    const approachProfile = getProfile('approach-type');
+    const returnProfile = getProfile('return-type-main');
+
+    const entryPt = gpxPoints[nearestEntryIdx];
+    const exitPt = gpxPoints[nearestExitIdx];
+
+    // Build approach waypoints chain
     const approachWps = waypoints.filter(w => w.type === 'approach' || w.type === 'both');
     const returnWps = waypoints.filter(w => w.type === 'return' || w.type === 'both');
+
+    const approachChain = [userCoord, ...approachWps, entryPt];
+    const returnChain = [exitPt, ...returnWps, finalEnd];
+
     setStatus('gen-status', 'Aanrijweg berekenen...', '');
-    const approachPts = await routeThrough([userCoord, ...approachWps, entryPt], approachProfile);
+    const approachPts = await routeThrough(approachChain, approachProfile);
+
     setStatus('gen-status', 'Terugweg berekenen...', '');
-    const returnPts = await routeThrough([exitPt, ...returnWps, finalEnd], returnProfile);
-    let routePts = nearestEntryIdx <= nearestExitIdx ? gpxPoints.slice(nearestEntryIdx, nearestExitIdx + 1) : [...gpxPoints.slice(nearestEntryIdx), ...gpxPoints.slice(0, nearestExitIdx + 1)];
+    const returnPts = await routeThrough(returnChain, returnProfile);
+
+    const routePts = buildRoutePts(nearestEntryIdx, nearestExitIdx);
+    const allPts = [...approachPts, ...routePts, ...returnPts];
     const rawName = document.getElementById('outputname').value.trim();
-    download(buildGPX([...approachPts, ...routePts, ...returnPts]), rawName ? rawName.replace(/\.gpx$/i,'') + '.gpx' : 'route_uitgebreid.gpx');
+    download(buildGPX(allPts), rawName ? rawName.replace(/\.gpx$/i,'') + '.gpx' : 'route_uitgebreid.gpx');
     setStatus('gen-status', 'Klaar. Bestand gedownload.', 'ok');
   } catch (e) { setStatus('gen-status', 'Fout: ' + e.message, 'err'); }
   btn.disabled = false; btn.textContent = 'Genereer & download GPX';
@@ -669,7 +869,8 @@ function buildGPX(pts) {
 function download(content, filename) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([content], { type: 'application/gpx+xml' }));
-  a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
 function setStatus(id, msg, type) { const el = document.getElementById(id); el.textContent = msg; el.className = 'status' + (type ? ' ' + type : ''); }
