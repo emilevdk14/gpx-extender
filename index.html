@@ -491,6 +491,11 @@ function initMap3(){
   if(!maps.m3){
     maps.m3=L.map('map3',{tap:true});
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(maps.m3);
+    L.Control.geocoder({defaultMarkGeocode:false,placeholder:'Zoek adres...',geocoder:L.Control.Geocoder.nominatim({geocodingQueryParams:{countrycodes:'be,nl'}})}).on('markgeocode',e=>{
+      const{lat,lng}=e.geocode.center;
+      if(routeEditMode==='waypoint')addWaypoint(lat,lng);
+      maps.m3.setView([lat,lng],15);
+    }).addTo(maps.m3);
     maps.m3.on('click',e=>{if(routeEditMode==='waypoint')addWaypoint(e.latlng.lat,e.latlng.lng);});
     gpxFiles.forEach(f=>{const lls=f.points.map(p=>[p.lat,p.lon]);L.polyline(lls,{color:f.color,weight:2.5,opacity:.7}).addTo(maps.m3);drawArrows(maps.m3,lls,f.color);});
     L.marker([userCoord.lat,userCoord.lon],{icon:pin('#4a9eff',13),interactive:false}).addTo(maps.m3);
@@ -518,11 +523,11 @@ function addWaypoint(lat,lon){
     const ll=e.target.getLatLng();wp.lat=ll.lat;wp.lon=ll.lng;
     if(wp.m4marker)wp.m4marker.setLatLng([wp.lat,wp.lon]);
     renderWpList();
-    recalcConnEntry(wp);
+    recalcAllConnEntries();
   });
   waypoints.push(wp);
   renderWpList();
-  recalcConnEntry(wp);
+  recalcAllConnEntries();
 }
 
 function recalcConnEntry(wp){
@@ -545,13 +550,26 @@ function recalcConnEntry(wp){
 }
 
 function recalcAllConnEntries(){
-  // For each file after the first, check if there's a conn waypoint and recalc entry
+  // File 0: entry based on last approach/both waypoint, or userCoord
+  if(gpxFiles.length>0){
+    const f=gpxFiles[0];
+    if(!f.manualEntry){
+      const approachWps=waypoints.filter(w=>w.type==='approach'||w.type==='both');
+      const lastWp=approachWps.length?approachWps[approachWps.length-1]:null;
+      const ref=lastWp?{lat:lastWp.lat,lon:lastWp.lon}:userCoord;
+      f.entryIdx=findNearest(ref,f.points);
+      autoSetExit(f);
+      if(maps.m4)updateMap4Markers(f);
+    }
+  }
+  // File i (i>0): entry based on last conn waypoint for connection i-1→i, or exitPt of file i-1
   for(let i=1;i<gpxFiles.length;i++){
     const f=gpxFiles[i];
     if(f.manualEntry)continue;
     const connWps=waypoints.filter(w=>w.type==='conn'&&w.connIdx===i-1);
     const lastWp=connWps.length?connWps[connWps.length-1]:null;
-    const ref=lastWp?{lat:lastWp.lat,lon:lastWp.lon}:userCoord;
+    const prev=gpxFiles[i-1];
+    const ref=lastWp?{lat:lastWp.lat,lon:lastWp.lon}:{lat:prev.points[prev.exitIdx].lat,lon:prev.points[prev.exitIdx].lon};
     f.entryIdx=findNearest(ref,f.points);
     autoSetExit(f);
     if(maps.m4)updateMap4Markers(f);
@@ -562,23 +580,9 @@ function removeWaypoint(id){
   const i=waypoints.findIndex(w=>w.id===id);if(i===-1)return;
   try{waypoints[i].marker.remove();}catch(e){}
   try{if(waypoints[i].m4marker)waypoints[i].m4marker.remove();}catch(e){}
-  const wp=waypoints[i];
   waypoints.splice(i,1);
   renderWpList();
-  // Recalc entry after removal
-  if(wp.type==='conn'&&wp.connIdx!=null){
-    const nextFileIdx=wp.connIdx+1;
-    if(nextFileIdx<gpxFiles.length){
-      const f=gpxFiles[nextFileIdx];
-      if(!f.manualEntry){
-        const connWps=waypoints.filter(w=>w.type==='conn'&&w.connIdx===wp.connIdx);
-        const ref=connWps.length?connWps[connWps.length-1]:gpxFiles[wp.connIdx]?{lat:gpxFiles[wp.connIdx].points[gpxFiles[wp.connIdx].exitIdx].lat,lon:gpxFiles[wp.connIdx].points[gpxFiles[wp.connIdx].exitIdx].lon}:userCoord;
-        f.entryIdx=findNearest(ref,f.points);
-        autoSetExit(f);
-        if(maps.m4)updateMap4Markers(f);
-      }
-    }
-  }
+  recalcAllConnEntries();
 }
 
 function setWpType(id,type,connIdx){
