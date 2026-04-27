@@ -173,6 +173,7 @@ button.ghost{background:transparent;border-color:var(--border);color:var(--text-
   <div class="stats-divider"></div>
   <div class="stat-item"><div class="stat-lbl">Daling</div><div class="stat-val" id="sb-descent">--</div><div class="stat-sub">m</div></div>
   <div class="stat-note" id="sb-note"></div>
+  <button onclick="recalcStats()" style="font-size:.68rem;padding:.3rem .7rem;border-color:var(--accent);color:var(--accent);background:transparent;margin-left:auto">↻ Bereken</button>
 </div>
 
 <!-- STAP 1: Bestanden -->
@@ -297,6 +298,14 @@ button.ghost{background:transparent;border-color:var(--border);color:var(--text-
     <div class="step-desc">Controleer de route en download je GPX bestand.</div>
     <div class="summary-grid" id="confirm-summary"></div>
     <div class="map-container"><div id="map5" class="map-lg"></div></div>
+    <div id="route-slider-wrap" style="display:none;margin-top:.5rem">
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.3rem">
+        <span style="font-size:1.1rem">🚴</span>
+        <input type="range" id="route-slider" min="0" max="1000" value="0" style="flex:1;accent-color:var(--accent);cursor:pointer" oninput="updateSlider(this.value)">
+        <span style="font-size:.75rem;color:var(--text-muted);min-width:60px;text-align:right" id="slider-dist">0.0 km</span>
+      </div>
+      <div style="font-size:.72rem;color:var(--text-dim);text-align:center">Sleep de slider om de route te volgen</div>
+    </div>
     <div class="preview-legend" id="preview-legend"></div>
     <div class="status" id="preview-status"></div>
     <div class="divider"></div>
@@ -353,7 +362,7 @@ async function goToStep(n){
   if(n===3)initMap4();
   if(n===4){buildConfirmSummary();await buildFinalPreview();}
   setTimeout(()=>Object.values(maps).forEach(m=>m&&m.invalidateSize()),120);
-  if(n>0)recalcStats();
+  // Stats only recalculated on demand
 }
 
 // ── Stats bar ──────────────────────────────────────────────────────────────
@@ -743,13 +752,16 @@ async function buildFinalPreview(){
     segments.forEach((seg,i)=>{
       const ll=toLL(seg.pts);
       if(ll.length>1){L.polyline(ll,{color:seg.color,weight:3.5}).addTo(maps.m5);drawArrows(maps.m5,ll,seg.color,true);allLL.push(...ll);}
-      if(connections[i]){const cll=toLL(connections[i]);if(cll.length>1){L.polyline(cll,{color:'#ff8c00',weight:2,dashArray:'6,4'}).addTo(maps.m5);allLL.push(...cll);}}
+      const connColors=['#ff8c00','#e879f9','#fbbf24','#06b6d4','#f97316','#84cc16'];
+    if(connections[i]){const cll=toLL(connections[i]);if(cll.length>1){const cc=connColors[i%connColors.length];L.polyline(cll,{color:cc,weight:2.5,dashArray:'6,4'}).addTo(maps.m5);allLL.push(...cll);}}
     });
     const retLL=toLL(returnPts);
     if(retLL.length>1){L.polyline(retLL,{color:'#64748b',weight:2.5,dashArray:'8,4'}).addTo(maps.m5);drawArrows(maps.m5,retLL,'#64748b');allLL.push(...retLL);}
     if(aLL.length)L.marker(aLL[0],{icon:pin('#4a9eff')}).addTo(maps.m5).bindTooltip('Start');
     if(retLL.length)L.marker(retLL[retLL.length-1],{icon:pin('#a855f7')}).addTo(maps.m5).bindTooltip('Einde');
     if(allLL.length)maps.m5.fitBounds(L.latLngBounds(allLL),{padding:[20,20]});
+    window._previewAllLL = allLL;
+    initRouteSlider(allLL);
 
     const realDist=(totalDist(approachPts)+segments.reduce((s,seg)=>s+totalDist(seg.pts),0)+connections.reduce((s,c)=>s+totalDist(c),0)+totalDist(returnPts))/1000;
     const orig=gpxFiles.reduce((s,f)=>s+totalDist(buildFilePts(f)),0)/1000;
@@ -767,7 +779,7 @@ async function buildFinalPreview(){
 
     let lhtml='<span><strong style="color:#94a3b8">━ ─</strong> Aanrijweg</span>';
     segments.forEach((seg,i)=>{lhtml+=`<span><strong style="color:${seg.color}">━</strong> Ronde ${i+1}: ${seg.name}</span>`;});
-    if(gpxFiles.length>1)lhtml+='<span><strong style="color:#ff8c00">━ ─</strong> Verbinding</span>';
+    if(gpxFiles.length>1){const connColors=['#ff8c00','#e879f9','#fbbf24','#06b6d4','#f97316','#84cc16'];for(let ci=0;ci<gpxFiles.length-1;ci++){const cc=connColors[ci%connColors.length];lhtml+=`<span><strong style="color:${cc}">━ ─</strong> Verbinding ${ci+1}→${ci+2}</span>`;}}
     lhtml+='<span><strong style="color:#64748b">━ ─</strong> Terugweg</span>';
     document.getElementById('preview-legend').innerHTML=lhtml;
     setStatus('preview-status','Klaar.','ok');
@@ -925,6 +937,56 @@ function drawArrows(map,lls,color,bold=false){
 function buildGPX(pts){const hdr=`<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="GPX Route Extender" xmlns="http://www.topografix.com/GPX/1/1">\n<trk><n>Gecombineerde route</n><trkseg>\n`;return hdr+pts.map(p=>`<trkpt lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}">${p.el!=null?`<ele>${p.el}</ele>`:''}</trkpt>`).join('\n')+'\n</trkseg></trk></gpx>';}
 function download(content,filename){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type:'application/gpx+xml'}));a.download=filename;document.body.appendChild(a);a.click();document.body.removeChild(a);}
 function setStatus(id,msg,type){const el=document.getElementById(id);if(!el)return;el.textContent=msg;el.className='status'+(type?' '+type:'');}
+
+// ── Route slider animation ─────────────────────────────────────────────────
+let sliderMarker=null;
+let sliderPoints=[];
+let sliderCumDist=[];
+
+function initRouteSlider(allLL){
+  document.getElementById('route-slider-wrap').style.display='block';
+  // Build cumulative distance array from allLL
+  sliderPoints=allLL;
+  sliderCumDist=[0];
+  for(let i=1;i<allLL.length;i++){
+    const a={lat:allLL[i-1][0],lon:allLL[i-1][1]};
+    const b={lat:allLL[i][0],lon:allLL[i][1]};
+    sliderCumDist.push(sliderCumDist[i-1]+hav(a,b));
+  }
+  document.getElementById('route-slider').value=0;
+  document.getElementById('slider-dist').textContent='0.0 km';
+  // Place marker at start
+  if(sliderMarker)sliderMarker.remove();
+  if(allLL.length){
+    sliderMarker=L.marker(allLL[0],{icon:bikeIcon(),zIndexOffset:1000}).addTo(maps.m5);
+  }
+}
+
+function updateSlider(val){
+  if(!sliderPoints.length||!sliderCumDist.length)return;
+  const totalDist=sliderCumDist[sliderCumDist.length-1];
+  const targetDist=(val/1000)*totalDist;
+  // Binary search for position
+  let lo=0,hi=sliderCumDist.length-1;
+  while(lo<hi-1){const mid=Math.floor((lo+hi)/2);if(sliderCumDist[mid]<=targetDist)lo=mid;else hi=mid;}
+  const segDist=sliderCumDist[hi]-sliderCumDist[lo];
+  const t=segDist>0?(targetDist-sliderCumDist[lo])/segDist:0;
+  const p1=sliderPoints[lo],p2=sliderPoints[hi];
+  const lat=p1[0]+t*(p2[0]-p1[0]);
+  const lng=p1[1]+t*(p2[1]-p1[1]);
+  if(sliderMarker)sliderMarker.setLatLng([lat,lng]);
+  else sliderMarker=L.marker([lat,lng],{icon:bikeIcon(),zIndexOffset:1000}).addTo(maps.m5);
+  document.getElementById('slider-dist').textContent=(targetDist/1000).toFixed(1)+' km';
+  maps.m5.panTo([lat,lng],{animate:false});
+}
+
+function bikeIcon(){
+  return L.divIcon({
+    className:'',
+    html:'<div style="font-size:20px;line-height:1;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))">🚴</div>',
+    iconSize:[24,24],iconAnchor:[12,12]
+  });
+}
 </script>
 </body>
 </html>
